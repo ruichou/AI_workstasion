@@ -1,0 +1,554 @@
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::Duration;
+use sysinfo::{Disks, System};
+use tauri::{AppHandle, Manager, State};
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
+struct AppItem {
+    name: String,
+    path: String,
+    emoji: String,
+    args: Option<String>,
+}
+
+impl Default for AppItem {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            path: String::new(),
+            emoji: String::from("📦"),
+            args: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
+struct Config {
+    city: String,
+    lat: Option<f64>,
+    lon: Option<f64>,
+    apps: Vec<AppItem>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            city: String::from("北京"),
+            lat: None,
+            lon: None,
+            apps: vec![
+                AppItem {
+                    name: String::from("资源管理器"),
+                    path: String::from(r"C:\Windows\explorer.exe"),
+                    emoji: String::from("🗂"),
+                    args: None,
+                },
+                AppItem {
+                    name: String::from("记事本"),
+                    path: String::from(r"C:\Windows\notepad.exe"),
+                    emoji: String::from("📝"),
+                    args: None,
+                },
+                AppItem {
+                    name: String::from("命令提示符"),
+                    path: String::from(r"C:\Windows\System32\cmd.exe"),
+                    emoji: String::from("⌨"),
+                    args: None,
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
+struct SysInfo {
+    cpu: f32,
+    mem_used: u64,
+    mem_total: u64,
+    disk_used: u64,
+    disk_total: u64,
+}
+
+#[derive(Serialize, Clone)]
+struct Temps {
+    cpu: Option<f32>,
+    disk: Option<f32>,
+}
+
+#[derive(Serialize, Clone)]
+struct Weather {
+    city: String,
+    temp: f64,
+    feels: f64,
+    humidity: f64,
+    wind: f64,
+    code: u8,
+    is_day: bool,
+}
+
+struct AppState {
+    config: Mutex<Config>,
+    geocode: Mutex<Option<(f64, f64)>>,
+    http: reqwest::Client,
+    eye_ramp: Mutex<Option<[u16; 768]>>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            config: Mutex::new(Config::default()),
+            geocode: Mutex::new(None),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .build()
+                .unwrap_or_default(),
+            eye_ramp: Mutex::new(None),
+        }
+    }
+}
+
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("config.json"))
+}
+
+fn load_config(app: &AppHandle) -> Config {
+    let path = match config_path(app) {
+        Ok(p) => p,
+        Err(_) => return Config::default(),
+    };
+    match fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).unwrap_or_else(|_| {
+            fs::write(&path, serde_json::to_string_pretty(&Config::default()).unwrap()).ok();
+            Config::default()
+        }),
+        Err(_) => {
+            fs::write(&path, serde_json::to_string_pretty(&Config::default()).unwrap()).ok();
+            Config::default()
+        }
+    }
+}
+
+#[tauri::command]
+fn get_config(state: State<'_, AppState>) -> Config {
+    state.config.lock().unwrap().clone()
+}
+
+#[tauri::command]
+async fn get_sysinfo() -> SysInfo {
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    sys.refresh_cpu_usage();
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    sys.refresh_cpu_usage();
+
+    let disks = Disks::new_with_refreshed_list();
+    let disk_total: u64 = disks.iter().map(|d| d.total_space()).sum();
+    let disk_avail: u64 = disks.iter().map(|d| d.available_space()).sum();
+
+    SysInfo {
+        cpu: sys.global_cpu_usage(),
+        mem_used: sys.used_memory(),
+        mem_total: sys.total_memory(),
+        disk_used: disk_total.saturating_sub(disk_avail),
+        disk_total,
+    }
+}
+
+fn city_coords(city: &str) -> Option<(f64, f64)> {
+    let (lat, lon) = match city.trim() {
+        "北京" => (39.9042, 116.4074),
+        "上海" => (31.2304, 121.4737),
+        "广州" => (23.1291, 113.2644),
+        "深圳" => (22.5431, 114.0579),
+        "成都" => (30.5728, 104.0668),
+        "杭州" => (30.2741, 120.1551),
+        "武汉" => (30.5928, 114.3055),
+        "西安" => (34.3416, 108.9398),
+        "重庆" => (29.5630, 106.5516),
+        "南京" => (32.0603, 118.7969),
+        "天津" => (39.3434, 117.3616),
+        "苏州" => (31.2989, 120.5853),
+        "青岛" => (36.0671, 120.3826),
+        "郑州" => (34.7466, 113.6254),
+        "长沙" => (28.2282, 112.9388),
+        "沈阳" => (41.8057, 123.4315),
+        "厦门" => (24.4798, 118.0894),
+        "香港" => (22.3193, 114.1694),
+        "台北" => (25.0330, 121.5654),
+        _ => (39.9042, 116.4074),
+    };
+    Some((lat, lon))
+}
+
+async fn resolve_coords(state: &AppState, cfg: &Config) -> Result<(f64, f64), String> {
+    if let (Some(lat), Some(lon)) = (cfg.lat, cfg.lon) {
+        return Ok((lat, lon));
+    }
+    if let Some(g) = *state.geocode.lock().unwrap() {
+        return Ok(g);
+    }
+    let coords = city_coords(&cfg.city);
+    *state.geocode.lock().unwrap() = coords;
+    Ok(coords.unwrap_or((39.9042, 116.4074)))
+}
+
+fn wmo_desc(code: u8) -> (String, &'static str) {
+    let (emoji, desc) = match code {
+        0 => ("☀️", "晴"),
+        1 => ("🌤", "晴间多云"),
+        2 => ("⛅", "多云"),
+        3 => ("☁️", "阴"),
+        45 | 48 => ("🌫", "雾"),
+        51 | 53 | 55 => ("🌦", "毛毛雨"),
+        56 | 57 => ("🌧", "冻毛毛雨"),
+        61 | 63 | 65 => ("🌧", "雨"),
+        66 | 67 => ("🌧", "冻雨"),
+        71 | 73 | 75 => ("🌨", "雪"),
+        77 => ("❄️", "雪粒"),
+        80..=82 => ("🌦", "阵雨"),
+        85 | 86 => ("🌨", "阵雪"),
+        95 => ("⛈", "雷暴"),
+        96 | 99 => ("⛈", "雷暴伴冰雹"),
+        _ => ("🌡", "未知"),
+    };
+    (emoji.to_string(), desc)
+}
+
+#[tauri::command]
+async fn get_weather(state: State<'_, AppState>) -> Result<Weather, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let (lat, lon) = resolve_coords(&state, &cfg).await?;
+
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day&timezone=auto"
+    );
+    let resp = state
+        .http
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("天气请求失败: {e}"))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("解析失败: {e}"))?;
+
+    let cur = resp
+        .get("current")
+        .ok_or_else(|| String::from("响应缺少 current 字段"))?;
+    let getf = |k: &str| cur.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let code = cur.get("weather_code").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+    let is_day = cur.get("is_day").and_then(|v| v.as_u64()).unwrap_or(1) == 1;
+    let _ = wmo_desc(code);
+
+    Ok(Weather {
+        city: cfg.city.clone(),
+        temp: getf("temperature_2m"),
+        feels: getf("apparent_temperature"),
+        humidity: getf("relative_humidity_2m"),
+        wind: getf("wind_speed_10m"),
+        code,
+        is_day,
+    })
+}
+
+#[tauri::command]
+fn launch_app(path: String, args: Option<String>) -> Result<(), String> {
+    let mut cmd = std::process::Command::new(&path);
+    if let Some(a) = args {
+        cmd.args(a.split_whitespace());
+    }
+    cmd.spawn()
+        .map_err(|e| format!("启动失败: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn open_config(app: AppHandle) -> Result<String, String> {
+    let path = config_path(&app)?;
+    std::process::Command::new("notepad")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("打开失败: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn reload_config(app: AppHandle, state: State<'_, AppState>) -> Config {
+    let cfg = load_config(&app);
+    *state.config.lock().unwrap() = cfg.clone();
+    cfg
+}
+
+#[cfg(target_os = "windows")]
+mod temps {
+    use std::collections::HashMap;
+    use wmi::{Variant, WMIConnection};
+
+    pub fn cpu_temp_celsius() -> Option<f32> {
+        let conn = WMIConnection::new().ok()?;
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT * FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation")
+            .ok()?;
+        for row in rows {
+            if let Some(Variant::UI4(n)) = row.get("Temperature") {
+                let c = *n as f64 / 10.0;
+                if c > 0.0 && c < 150.0 {
+                    return Some(c as f32);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn disk_temp_celsius() -> Option<f32> {
+        let conn = WMIConnection::with_namespace_path(r"root\Microsoft\Windows\Storage").ok()?;
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT * FROM MSFT_PhysicalDisk")
+            .ok()?;
+        let mut best: Option<f32> = None;
+        for row in rows {
+            if let Some(Variant::UI2(n)) = row.get("Temperature") {
+                if *n > 0 && *n < 150 {
+                    best = Some(best.map_or(*n as f32, |b| b.max(*n as f32)));
+                }
+            }
+        }
+        if best.is_some() {
+            return best;
+        }
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT * FROM MSFT_StorageReliabilityCounter")
+            .ok()?;
+        for row in rows {
+            if let Some(Variant::UI2(n)) = row.get("Temperature") {
+                if *n > 0 && *n < 150 {
+                    return Some(*n as f32);
+                }
+            }
+        }
+        None
+    }
+}
+
+#[tauri::command]
+async fn get_temps() -> Result<Temps, String> {
+    let cpu = tauri::async_runtime::spawn_blocking(|| temps::cpu_temp_celsius())
+        .await
+        .ok()
+        .flatten();
+    let disk = tauri::async_runtime::spawn_blocking(|| temps::disk_temp_celsius())
+        .await
+        .ok()
+        .flatten();
+    Ok(Temps { cpu, disk })
+}
+
+#[cfg(target_os = "windows")]
+mod audio {
+    use windows::core::GUID;
+    use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{eMultimedia, eRender, EDataFlow, ERole, IMMDeviceEnumerator};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX, COINIT};
+
+    const CLSID_MM_DEVICE_ENUMERATOR: GUID = GUID::from_u128(0xBCDE0395_E52F_467C_8E3D_C4579291692E);
+
+    fn with_volume<R>(f: impl FnOnce(&IAudioEndpointVolume) -> R) -> Option<R> {
+        unsafe {
+            let hr = CoInitializeEx(None, COINIT(0));
+            if hr.is_err() {
+                return None;
+            }
+            let result = (|| {
+                let enumerator: IMMDeviceEnumerator =
+                    match CoCreateInstance(&CLSID_MM_DEVICE_ENUMERATOR, None, CLSCTX(1)) {
+                        Ok(e) => e,
+                        Err(_) => return None,
+                    };
+                let device = match enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
+                    Ok(d) => d,
+                    Err(_) => return None,
+                };
+                let volume = match device.Activate::<IAudioEndpointVolume>(CLSCTX(1), None) {
+                    Ok(v) => v,
+                    Err(_) => return None,
+                };
+                Some(f(&volume))
+            })();
+            CoUninitialize();
+            result
+        }
+    }
+
+    pub fn get_volume() -> Option<f32> {
+        with_volume(|v| unsafe { v.GetMasterVolumeLevelScalar().ok() }).flatten()
+    }
+
+    pub fn set_volume(level: f32) -> bool {
+        let ok = with_volume(|v| {
+            unsafe { v.SetMasterVolumeLevelScalar(level, &GUID::zeroed()) }.is_ok()
+        });
+        ok.unwrap_or(false)
+    }
+}
+
+#[tauri::command]
+fn get_volume() -> Option<f32> {
+    audio::get_volume()
+}
+
+#[tauri::command]
+fn set_volume(level: f32) {
+    audio::set_volume(level.clamp(0.0, 1.0));
+}
+
+#[tauri::command]
+fn set_window_opacity(app: AppHandle, level: f64) -> Result<(), String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| String::from("找不到主窗口"))?;
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::COLORREF;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetWindowLongPtrW, SetLayeredWindowAttributes, SetWindowLongPtrW, GWL_EXSTYLE,
+            LWA_ALPHA, WS_EX_LAYERED,
+        };
+        unsafe {
+            let hwnd = app.get_window("main").and_then(|w| w.hwnd().ok()).ok_or_else(|| String::from("获取窗口句柄失败"))?;
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as isize;
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, (ex | WS_EX_LAYERED.0 as isize) as _);
+            let alpha = (level.clamp(0.0, 1.0) * 255.0).round() as u8;
+            SetLayeredWindowAttributes(hwnd, COLORREF(0), alpha, LWA_ALPHA)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+mod gamma {
+    use std::ffi::c_void;
+    use windows::Win32::Graphics::Gdi::{GetDC, ReleaseDC};
+    use windows::Win32::UI::ColorSystem::{GetDeviceGammaRamp, SetDeviceGammaRamp};
+
+    pub fn get_original(ramp: &mut [u16; 768]) -> bool {
+        unsafe {
+            let hdc = GetDC(None);
+            if hdc.is_invalid() {
+                return false;
+            }
+            let ok = GetDeviceGammaRamp(hdc, ramp.as_mut_ptr() as *mut c_void).as_bool();
+            let _ = ReleaseDC(None, hdc);
+            ok
+        }
+    }
+
+    pub fn set_ramp(ramp: &[u16; 768]) -> bool {
+        unsafe {
+            let hdc = GetDC(None);
+            if hdc.is_invalid() {
+                return false;
+            }
+            let ok = SetDeviceGammaRamp(hdc, ramp.as_ptr() as *const c_void).as_bool();
+            let _ = ReleaseDC(None, hdc);
+            ok
+        }
+    }
+}
+
+fn linear_ramp() -> [u16; 768] {
+    let mut ramp = [0u16; 768];
+    for i in 0..256 {
+        let v = (i as f64 / 255.0 * 65535.0).round() as u16;
+        ramp[i] = v;
+        ramp[i + 256] = v;
+        ramp[i + 512] = v;
+    }
+    ramp
+}
+
+#[tauri::command]
+fn set_eye_care(state: State<'_, AppState>, enabled: bool, intensity: f64) -> Result<(), String> {
+    let intensity = intensity.clamp(0.0, 1.0);
+    if enabled {
+        let mut orig = [0u16; 768];
+        let saved = *state.eye_ramp.lock().unwrap();
+        if let Some(s) = saved {
+            orig = s;
+        } else if !gamma::get_original(&mut orig) {
+            orig = linear_ramp();
+        }
+        *state.eye_ramp.lock().unwrap() = Some(orig);
+        let base = [1.0f64, 0.90, 0.70];
+        let scales = [
+            1.0 + (base[0] - 1.0) * intensity,
+            1.0 + (base[1] - 1.0) * intensity,
+            1.0 + (base[2] - 1.0) * intensity,
+        ];
+        let mut ramp = [0u16; 768];
+        for i in 0..256 {
+            ramp[i] = (orig[i] as f64 * scales[0]).clamp(0.0, 65535.0) as u16;
+            ramp[i + 256] = (orig[i + 256] as f64 * scales[1]).clamp(0.0, 65535.0) as u16;
+            ramp[i + 512] = (orig[i + 512] as f64 * scales[2]).clamp(0.0, 65535.0) as u16;
+        }
+        if !gamma::set_ramp(&ramp) {
+            return Err(String::from("设置护眼色温失败（可能被显卡驱动拦截）"));
+        }
+    } else {
+        let orig = state
+            .eye_ramp
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_else(linear_ramp);
+        if !gamma::set_ramp(&orig) {
+            return Err(String::from("恢复色温失败"));
+        }
+    }
+    Ok(())
+}
+
+pub fn run() {
+    tauri::Builder::default()
+        .manage(AppState::new())
+        .setup(|app| {
+            let cfg = load_config(&app.handle());
+            *app.state::<AppState>().config.lock().unwrap() = cfg;
+
+            let _window = app.get_webview_window("main");
+
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            get_sysinfo,
+            get_temps,
+            get_weather,
+            get_volume,
+            set_volume,
+            set_window_opacity,
+            set_eye_care,
+            launch_app,
+            open_config,
+            reload_config
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Some(orig) = app_handle.state::<AppState>().eye_ramp.lock().unwrap().take() {
+                    let _ = gamma::set_ramp(&orig);
+                }
+            }
+        });
+}

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Glass Workspace</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <span class="brand-dot"></span>
+          <span class="brand-name">工作台</span>
+        </div>
+        <div class="win-controls">
+          <button id="btn-settings" class="wc-btn" title="设置">⚙</button>
+          <button id="btn-pin" class="wc-btn" title="置顶切换">📌</button>
+          <button id="btn-min" class="wc-btn" title="最小化">─</button>
+          <button id="btn-close" class="wc-btn wc-close" title="退出">✕</button>
+        </div>
+      </header>
+
+      <div id="settings-panel" class="settings-panel hidden">
+        <div class="set-title">设置</div>
+        <div class="set-row">
+          <span class="set-label">透明度</span>
+          <input type="range" id="slider-opacity" min="0" max="100" value="100" />
+          <span class="set-val" id="val-opacity">100%</span>
+        </div>
+        <div class="set-row">
+          <span class="set-label">音量</span>
+          <input type="range" id="slider-volume" min="0" max="100" value="50" />
+          <span class="set-val" id="val-volume">50%</span>
+        </div>
+        <div class="set-row">
+          <span class="set-label">护眼模式</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-eyecare" />
+            <span class="switch-track"></span>
+          </label>
+        </div>
+        <div class="set-row">
+          <span class="set-label">护眼强度</span>
+          <input type="range" id="slider-eyecare" min="10" max="70" value="35" />
+          <span class="set-val" id="val-eyecare">35%</span>
+        </div>
+      </div>
+
+      <main class="h-main">
+        <section class="seg clock-seg">
+          <div class="time-row">
+            <span id="clock-time" class="clock-time">--:--</span>
+            <span id="clock-sec" class="clock-sec">--</span>
+          </div>
+          <div id="clock-date" class="clock-date">----年--月--日 星期-</div>
+        </section>
+
+        <section class="seg weather-seg">
+          <span id="w-emoji" class="w-emoji">🌤</span>
+          <div class="w-mid">
+            <div class="w-temp" id="w-temp">--°</div>
+            <div class="w-desc" id="w-desc">加载中…</div>
+          </div>
+          <div class="w-meta">
+            <div class="w-line" id="w-city">--</div>
+            <div class="w-line" id="w-humid">💧 --%</div>
+            <div class="w-line" id="w-wind">🌬 --</div>
+          </div>
+        </section>
+
+        <section class="seg sys-seg">
+          <div class="sys-row">
+            <span class="sys-label">CPU</span>
+            <div class="bar"><div id="bar-cpu" class="bar-fill"></div></div>
+            <span class="sys-val" id="val-cpu">--%</span>
+          </div>
+          <div class="sys-row">
+            <span class="sys-label">内存</span>
+            <div class="bar"><div id="bar-mem" class="bar-fill"></div></div>
+            <span class="sys-val" id="val-mem">--</span>
+          </div>
+          <div class="sys-row">
+            <span class="sys-label">磁盘</span>
+            <div class="bar"><div id="bar-disk" class="bar-fill"></div></div>
+            <span class="sys-val" id="val-disk">--</span>
+          </div>
+          <div class="sys-row temp-row">
+            <span class="sys-label">CPU温</span>
+            <span class="sys-val" id="val-cputemp">--</span>
+          </div>
+          <div class="sys-row temp-row">
+            <span class="sys-label">硬盘温</span>
+            <span class="sys-val" id="val-disktemp">--</span>
+          </div>
+        </section>
+
+        <section class="seg cal-seg">
+          <div class="cal-head">
+            <button id="cal-prev" class="cal-nav">‹</button>
+            <span id="cal-title" class="cal-title">--月</span>
+            <button id="cal-next" class="cal-nav">›</button>
+          </div>
+          <div id="cal-grid" class="cal-grid"></div>
+        </section>
+
+        <section class="seg apps-seg">
+          <div class="apps-head">
+            <span class="apps-title">快捷启动</span>
+            <button id="btn-config" class="apps-edit" title="编辑配置">⚙</button>
+          </div>
+          <div id="apps-grid" class="apps-grid"></div>
+          <div id="apps-empty" class="apps-empty hidden">点 ⚙ 添加应用</div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
