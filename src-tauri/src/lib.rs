@@ -44,9 +44,9 @@ impl Default for Config {
             args: None,
         };
         Self {
-            city: String::from("北京"),
-            lat: None,
-            lon: None,
+            city: String::from("常州·湖塘"),
+            lat: Some(31.7332),
+            lon: Some(119.9649),
             apps: vec![
                 blank("ChatGPT", "🤖"),
                 blank("OpenCode", "◯"),
@@ -183,6 +183,7 @@ fn city_coords(city: &str) -> Option<(f64, f64)> {
         "南京" => (32.0603, 118.7969),
         "天津" => (39.3434, 117.3616),
         "苏州" => (31.2989, 120.5853),
+        "常州" => (31.7332, 119.9649),
         "青岛" => (36.0671, 120.3826),
         "郑州" => (34.7466, 113.6254),
         "长沙" => (28.2282, 112.9388),
@@ -632,8 +633,18 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+#[tauri::command]
+fn save_config(app: AppHandle, state: State<'_, AppState>, cfg: Config) -> Result<(), String> {
+    let path = config_path(&app)?;
+    let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+    *state.config.lock().unwrap() = cfg;
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
             let cfg = load_config(&app.handle());
@@ -657,7 +668,8 @@ pub fn run() {
             launch_tool,
             open_config,
             reload_config,
-            open_ai_chat
+            open_ai_chat,
+            save_config
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

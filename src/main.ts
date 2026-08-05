@@ -1,6 +1,7 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface SysInfo {
   cpu: number;
@@ -418,13 +419,59 @@ const TOOLS: { id: string; name: string; emoji: string }[] = [
   { id: "taskmgr", name: "任务管理器", emoji: "📊" },
 ];
 
-function tile(name: string, emoji: string, onClick: () => void, extra = "") {
+function tile(name: string, emoji: string, onClick: () => void, extra = "", onDelete?: () => void) {
   const t = document.createElement("button");
   t.className = `app-tile${extra ? ` ${extra}` : ""}`;
   t.title = name;
   t.innerHTML = `<span class="app-ico${extra ? ` ${extra}` : ""}">${emoji}</span><span class="app-name">${name}</span>`;
   t.addEventListener("click", onClick);
+  if (onDelete) {
+    const del = document.createElement("span");
+    del.className = "app-del";
+    del.textContent = "✕";
+    del.title = "删除";
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onDelete();
+    });
+    t.appendChild(del);
+  }
   return t;
+}
+
+async function getConfig(): Promise<Config> {
+  try {
+    return await invoke<Config>("get_config");
+  } catch {
+    return { city: "", lat: null, lon: null, apps: [] };
+  }
+}
+
+async function persistConfig(cfg: Config) {
+  await invoke("save_config", { cfg }).catch((e) => alert(e));
+  refreshApps();
+}
+
+async function addApp() {
+  const picked = await open({
+    multiple: false,
+    title: "选择要添加的应用程序",
+    filters: [{ name: "程序", extensions: ["exe", "lnk", "bat", "cmd"] }],
+  });
+  if (!picked) return;
+  const p = Array.isArray(picked) ? picked[0] : picked;
+  const name = p.split(/[\\/]/).pop()!.replace(/\.(exe|lnk|bat|cmd)$/i, "");
+  const cfg = await getConfig();
+  cfg.apps.push({ name, path: p, emoji: "📦", args: null });
+  await persistConfig(cfg);
+}
+
+async function removeApp(name: string) {
+  const cfg = await getConfig();
+  const before = cfg.apps.length;
+  cfg.apps = cfg.apps.filter((a) => a.name !== name);
+  if (cfg.apps.length === before) return;
+  await persistConfig(cfg);
 }
 
 async function refreshApps() {
@@ -439,18 +486,24 @@ async function refreshApps() {
   const apps = cfg?.apps ?? [];
   for (const app of apps) {
     appsGrid.appendChild(
-      tile(app.name, app.emoji || "📦", () => {
-        if (!app.path) {
-          alert(`「${app.name}」未配置路径，已打开配置文件，请填写 path 后保存`);
-          invoke("open_config").catch((e) => alert(e));
-          return;
-        }
-        invoke("launch_app", { path: app.path, args: app.args }).catch((e) => alert(e));
-      }),
+      tile(
+        app.name,
+        app.emoji || "📦",
+        () => {
+          if (!app.path) {
+            alert(`「${app.name}」未配置路径，已打开配置文件，请填写 path 后保存`);
+            invoke("open_config").catch((e) => alert(e));
+            return;
+          }
+          invoke("launch_app", { path: app.path, args: app.args }).catch((e) => alert(e));
+        },
+        "",
+        () => removeApp(app.name),
+      ),
     );
   }
   appsGrid.appendChild(
-    tile("添加应用", "+", () => invoke("open_config").catch((e) => alert(e)), "add"),
+    tile("添加应用", "+", () => addApp().catch((e) => alert(e)), "add"),
   );
 
   const foldersGrid = $("folders-grid");
@@ -686,7 +739,7 @@ function init() {
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);
-  setInterval(refreshWeather, 20 * 60 * 1000);
+  setInterval(refreshWeather, 5 * 60 * 1000);
 
   $("cal-prev").addEventListener("click", () => {
     calMonth--;
