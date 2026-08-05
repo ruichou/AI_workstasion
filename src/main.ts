@@ -179,6 +179,10 @@ function fmtClock() {
   $("clock-lunar").textContent = `农历${l.monthCn}${l.dayCn}`;
   $("mini-time").textContent = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   $("mini-date").textContent = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${WEEK_CN[now.getDay()]}`;
+  const mini = $("cal-mini");
+  if (mini) {
+    mini.textContent = `${now.getMonth() + 1}月${now.getDate()}日 周${WEEK_CN[now.getDay()]} · 农历${l.monthCn}${l.dayCn}`;
+  }
 }
 
 // ---------- 天气 ----------
@@ -575,8 +579,8 @@ function initAi() {
 // ---------- 缩服 ----------
 let collapsed = false;
 
-const MIN_W = 880;
-const MIN_H = 540;
+const MIN_W = 650;
+const MIN_H = 300;
 
 function initCollapse() {
   const win = getCurrentWindow();
