@@ -35,12 +35,40 @@ body {
   display: flex;
   flex-direction: column;
   padding: 10px 14px 8px;
-  background: radial-gradient(45% 60% at 12% 6%, rgba(90, 120, 255, calc(0.55 * var(--bg-a))), transparent 60%),
-    radial-gradient(40% 55% at 88% 12%, rgba(190, 90, 255, calc(0.5 * var(--bg-a))), transparent 62%),
-    radial-gradient(50% 65% at 78% 90%, rgba(255, 120, 80, calc(0.35 * var(--bg-a))), transparent 60%),
-    radial-gradient(45% 60% at 18% 92%, rgba(60, 220, 200, calc(0.38 * var(--bg-a))), transparent 60%),
-    linear-gradient(165deg, rgba(16, 20, 34, var(--bg-a)) 0%, rgba(27, 25, 50, var(--bg-a)) 55%, rgba(12, 14, 26, var(--bg-a)) 100%);
+  overflow: hidden;
+  background: radial-gradient(45% 60% at 12% 6%, rgba(100, 140, 255, calc(0.75 * var(--bg-a))), transparent 60%),
+    radial-gradient(38% 52% at 88% 12%, rgba(210, 100, 255, calc(0.85 * var(--bg-a))), transparent 62%),
+    radial-gradient(30% 45% at 62% 22%, rgba(255, 120, 200, calc(0.45 * var(--bg-a))), transparent 65%),
+    radial-gradient(50% 65% at 78% 90%, rgba(255, 140, 80, calc(0.6 * var(--bg-a))), transparent 60%),
+    radial-gradient(45% 60% at 18% 92%, rgba(70, 240, 210, calc(0.65 * var(--bg-a))), transparent 60%),
+    linear-gradient(165deg, rgba(16, 20, 34, var(--bg-a)) 0%, rgba(30, 26, 56, var(--bg-a)) 55%, rgba(12, 14, 26, var(--bg-a)) 100%);
   border-radius: 24px;
+}
+
+#app::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background: conic-gradient(from 0deg,
+    rgba(110, 160, 255, 0.45),
+    rgba(230, 130, 255, 0.38),
+    rgba(255, 160, 90, 0.36),
+    rgba(90, 245, 220, 0.42),
+    rgba(110, 160, 255, 0.45));
+  filter: blur(60px);
+  opacity: calc(0.9 * var(--bg-a));
+  animation: aurora-spin 30s linear infinite;
+}
+
+@keyframes aurora-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 #particles {
@@ -947,14 +975,23 @@ body {
   .grid {
     gap: 10px;
   }
+  .right-col {
+    gap: 10px;
+  }
+  .right-col .utils-card {
+    flex: 1.1;
+  }
+  .right-col .settings-card {
+    flex: 1;
+  }
   .tools-grid .app-ico {
-    width: 22px;
-    height: 22px;
-    font-size: 11px;
-    border-radius: 7px;
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+    border-radius: 6px;
   }
   .tools-grid .app-name {
-    font-size: 7.5px;
+    font-size: 7px;
   }
   .tool-tile {
     gap: 1px;
@@ -967,13 +1004,21 @@ body {
     margin-bottom: 1px;
   }
   .set-label {
+    width: 44px;
     font-size: 9px;
   }
   .set-val {
-    font-size: 9.5px;
+    width: 30px;
+    font-size: 9px;
   }
   .set-row input[type="range"] {
-    height: 14px;
+    height: 13px;
+  }
+  .ai-input {
+    padding: 6px 8px;
+  }
+  .ai-wrap {
+    gap: 6px;
   }
   .card-head {
     margin-bottom: 4px;

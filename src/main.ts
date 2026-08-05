@@ -575,8 +575,8 @@ function initAi() {
 // ---------- 缩服 ----------
 let collapsed = false;
 
-const MIN_W = 920;
-const MIN_H = 560;
+const MIN_W = 880;
+const MIN_H = 540;
 
 function initCollapse() {
   const win = getCurrentWindow();
@@ -613,15 +613,15 @@ function initParticles() {
   };
   resize();
   window.addEventListener("resize", resize);
-  const COLORS = ["120,170,255", "180,120,255", "255,150,120", "80,220,220"];
-  const N = Math.max(30, Math.min(64, Math.floor(canvas.clientWidth / 28)));
+  const COLORS = ["120,170,255", "190,120,255", "255,150,120", "80,230,210", "255,110,220", "255,220,120"];
+  const N = Math.max(40, Math.min(100, Math.floor(canvas.clientWidth / 20)));
   const ps = Array.from({ length: N }, () => ({
     x: Math.random(),
     y: Math.random(),
-    r: Math.random() * 2.2 + 0.8,
+    r: Math.random() * 4.5 + 1.6,
     vx: (Math.random() - 0.5) * 0.0003,
     vy: -(Math.random() * 0.0004 + 0.00008),
-    a: Math.random() * 0.4 + 0.25,
+    a: Math.random() * 0.45 + 0.55,
     c: COLORS[Math.floor(Math.random() * COLORS.length)],
     tw: Math.random() * Math.PI * 2,
   }));
