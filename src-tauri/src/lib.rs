@@ -151,14 +151,20 @@ async fn get_sysinfo() -> SysInfo {
     sys.refresh_cpu_usage();
 
     let disks = Disks::new_with_refreshed_list();
-    let disk_total: u64 = disks.iter().map(|d| d.total_space()).sum();
-    let disk_avail: u64 = disks.iter().map(|d| d.available_space()).sum();
+    let c_disk = disks
+        .iter()
+        .find(|d| d.mount_point().to_string_lossy().to_uppercase().starts_with("C:"))
+        .or_else(|| disks.iter().max_by_key(|d| d.total_space()));
+    let (disk_total, disk_used) = match c_disk {
+        Some(d) => (d.total_space(), d.total_space().saturating_sub(d.available_space())),
+        None => (0, 0),
+    };
 
     SysInfo {
         cpu: sys.global_cpu_usage(),
         mem_used: sys.used_memory(),
         mem_total: sys.total_memory(),
-        disk_used: disk_total.saturating_sub(disk_avail),
+        disk_used,
         disk_total,
     }
 }
@@ -260,11 +266,40 @@ async fn get_weather(state: State<'_, AppState>) -> Result<Weather, String> {
     })
 }
 
+fn split_args(input: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote = false;
+    let mut has = false;
+    for c in input.chars() {
+        match c {
+            '"' => in_quote = !in_quote,
+            ' ' | '\t' if !in_quote => {
+                if has {
+                    out.push(std::mem::take(&mut cur));
+                    has = false;
+                }
+            }
+            _ => {
+                cur.push(c);
+                has = true;
+            }
+        }
+    }
+    if has {
+        out.push(cur);
+    }
+    out
+}
+
 #[tauri::command]
 fn launch_app(path: String, args: Option<String>) -> Result<(), String> {
     let mut cmd = std::process::Command::new(&path);
     if let Some(a) = args {
-        cmd.args(a.split_whitespace());
+        let a = a.trim();
+        if !a.is_empty() {
+            cmd.args(split_args(a));
+        }
     }
     cmd.spawn()
         .map_err(|e| format!("启动失败: {e}"))?;
@@ -356,7 +391,7 @@ async fn get_temps() -> Result<Temps, String> {
 mod audio {
     use windows::core::GUID;
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
-    use windows::Win32::Media::Audio::{eMultimedia, eRender, EDataFlow, ERole, IMMDeviceEnumerator};
+    use windows::Win32::Media::Audio::{eMultimedia, eRender, IMMDeviceEnumerator};
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX, COINIT};
 
     const CLSID_MM_DEVICE_ENUMERATOR: GUID = GUID::from_u128(0xBCDE0395_E52F_467C_8E3D_C4579291692E);
@@ -412,9 +447,6 @@ fn set_volume(level: f32) {
 
 #[tauri::command]
 fn set_window_opacity(app: AppHandle, level: f64) -> Result<(), String> {
-    let win = app
-        .get_webview_window("main")
-        .ok_or_else(|| String::from("找不到主窗口"))?;
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::COLORREF;

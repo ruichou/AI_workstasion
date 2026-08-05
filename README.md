@@ -16,18 +16,15 @@
 
 ## 待办（回家继续）
 
-1. **重新构建验证**（上次构建被中断）：
-   ```
-   npm install        # 如缺依赖
-   npm run tauri build
-   ```
-   构建产物：`src-tauri\target\release\bundle\nsis\GlassWorkspace_0.1.0_x64-setup.exe`
+- [x] **重新构建验证**：`npm install && npm run tauri build` 已完成
+     构建产物：`src-tauri\target\release\bundle\nsis\GlassWorkspace_0.1.0_x64-setup.exe`
+     以及 `src-tauri\target\release\bundle\msi\GlassWorkspace_0.1.0_x64_en-US.msi`
+     冒烟测试：exe 启动正常无崩溃
+- [x] **快捷启动名称截断问题**：已确认 `.app-name` 的省略号样式已移除
+- [x] **launch_app 参数解析**：支持双引号包裹的带空格路径（`split_args`）
+- [x] **磁盘统计口径**：只统计 C: 盘，与 UI「硬盘 C:」标签一致
 
-2. **快捷启动名称截断问题**：
-   - 已把 `.app-name` 的 `overflow: hidden; text-overflow: ellipsis` 去掉（见 `src/styles.css`）
-   - 重新构建后确认 DeepSeek / 添加应用 是否完整显示
-
-3. **配置真实应用路径**：
+1. **配置真实应用路径**：
    - 默认配置了 11 个应用占位（name/emoji），路径为空
    - 运行应用 → 点顶部 ⚙ → 编辑 `%APPDATA%\com.glassworkspace.app\config.json`
    - 格式：`{ "name": "ChatGPT", "path": "C:\\...\\ChatGPT.exe", "emoji": "🤖", "args": null }`
