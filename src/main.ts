@@ -561,6 +561,90 @@ async function removeApp(name: string) {
   await persistConfig(cfg);
 }
 
+// ---------- 应用选择面板 ----------
+let pickerApps: AppItem[] = [];
+let pickerLoaded = false;
+let pickerAdded = new Set<string>();
+let pickerFilter = "";
+
+async function openPicker() {
+  $("app-picker").classList.remove("hidden");
+  ($("picker-search") as HTMLInputElement).value = "";
+  pickerFilter = "";
+  const cfg = await getConfig();
+  pickerAdded = new Set(cfg.apps.map((a) => a.name));
+  if (!pickerLoaded) {
+    renderPicker("", true);
+    try {
+      pickerApps = await invoke<AppItem[]>("scan_apps");
+    } catch {
+      pickerApps = [];
+    }
+    pickerLoaded = true;
+  }
+  renderPicker("", false);
+}
+
+function renderPicker(filter: string, loading: boolean) {
+  const list = $("picker-list");
+  if (loading) {
+    list.innerHTML = `<div class="picker-empty">正在扫描全盘应用…</div>`;
+    return;
+  }
+  if (!pickerApps.length) {
+    list.innerHTML = `<div class="picker-empty">没有扫描到应用</div>`;
+    return;
+  }
+  const kw = filter.trim().toLowerCase();
+  const items = pickerApps.filter((a) => !kw || a.name.toLowerCase().includes(kw));
+  if (!items.length) {
+    list.innerHTML = `<div class="picker-empty">没有找到匹配的应用</div>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const app of items) {
+    const added = pickerAdded.has(app.name);
+    const el = document.createElement("div");
+    el.className = `picker-item${added ? " added" : ""}`;
+    el.title = app.path;
+    el.innerHTML = `<span class="picker-ico">${app.emoji || "📦"}</span><span class="picker-name">${app.name}</span><span class="picker-state">${added ? "已添加 ✓" : "+ 添加"}</span>`;
+    el.addEventListener("click", () => {
+      void (async () => {
+        const cfg = await getConfig();
+        if (pickerAdded.has(app.name)) {
+          cfg.apps = cfg.apps.filter((x) => x.name !== app.name);
+          pickerAdded.delete(app.name);
+        } else {
+          if (!cfg.apps.some((x) => x.name === app.name)) {
+            cfg.apps.push({ name: app.name, path: app.path, emoji: app.emoji || "📦", args: null });
+          }
+          pickerAdded.add(app.name);
+        }
+        await persistConfig(cfg);
+        renderPicker(pickerFilter, false);
+      })();
+    });
+    list.appendChild(el);
+  }
+}
+
+function initPicker() {
+  $("picker-close").addEventListener("click", () => $("app-picker").classList.add("hidden"));
+  ($("picker-search") as HTMLInputElement).addEventListener("input", (e) => {
+    pickerFilter = (e.target as HTMLInputElement).value;
+    renderPicker(pickerFilter, false);
+  });
+  $("picker-browse").addEventListener("click", () => {
+    $("app-picker").classList.add("hidden");
+    addApp();
+  });
+  $("app-picker").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) {
+      $("app-picker").classList.add("hidden");
+    }
+  });
+}
+
 async function refreshApps() {
   const appsGrid = $("apps-grid");
   appsGrid.innerHTML = "";
@@ -570,7 +654,14 @@ async function refreshApps() {
   } catch {
     /* ignore */
   }
-  const apps = cfg?.apps ?? [];
+  let apps = cfg?.apps ?? [];
+  const allEmpty = apps.length > 0 && apps.every((a) => !a.path);
+  if (allEmpty) {
+    const c = await getConfig();
+    c.apps = [];
+    await invoke("save_config", { cfg: c }).catch(() => {});
+    apps = [];
+  }
   for (const app of apps) {
     appsGrid.appendChild(
       tile(
@@ -590,8 +681,13 @@ async function refreshApps() {
     );
   }
   appsGrid.appendChild(
-    tile("添加应用", "+", () => addApp().catch((e) => alert(e)), "add"),
+    tile("添加应用", "+", () => openPicker(), "add"),
   );
+
+  if (!apps.length && !localStorage.getItem("picker-shown")) {
+    localStorage.setItem("picker-shown", "1");
+    openPicker();
+  }
 
   const foldersGrid = $("folders-grid");
   foldersGrid.innerHTML = "";
@@ -841,6 +937,7 @@ function init() {
   initAi();
   initWindow();
   initParticles();
+  initPicker();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);

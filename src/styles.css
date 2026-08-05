@@ -1086,6 +1086,145 @@ body {
   }
 }
 
+/* ---------- 应用选择面板 ---------- */
+.app-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.picker-box {
+  width: min(580px, 88vw);
+  height: min(500px, 78vh);
+  background: rgba(18, 22, 36, 0.96);
+  border: 1px solid rgba(74, 158, 255, 0.3);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.picker-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.picker-search {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+}
+
+.picker-search::placeholder {
+  color: var(--text-muted);
+}
+
+.picker-close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.picker-close:hover {
+  color: var(--text);
+}
+
+.picker-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 2px;
+  align-content: start;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  min-width: 0;
+}
+
+.picker-item:hover {
+  background: var(--glass-hi);
+}
+
+.picker-item.added {
+  opacity: 0.5;
+}
+
+.picker-ico {
+  font-size: 17px;
+  flex-shrink: 0;
+}
+
+.picker-name {
+  flex: 1;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-state {
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.picker-item.added .picker-state {
+  color: var(--green);
+}
+
+.picker-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.picker-info {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
 /* ---------- 矮窗口紧凑兜底 ---------- */
 @media (max-height: 600px) {
   .grid {

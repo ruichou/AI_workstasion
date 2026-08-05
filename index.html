@@ -197,6 +197,23 @@
       </div>
       <div id="toast" class="toast hidden"></div>
     </div>
+
+    <div id="app-picker" class="app-picker hidden">
+      <div class="picker-box">
+        <div class="picker-head">
+          <span class="picker-title">添加应用</span>
+          <input id="picker-search" class="picker-search" placeholder="搜索应用…" />
+          <button id="picker-close" class="picker-close">✕</button>
+        </div>
+        <div id="picker-list" class="picker-list">
+          <div class="picker-empty">正在扫描全盘应用…</div>
+        </div>
+        <div class="picker-foot">
+          <button id="picker-browse" class="text-btn">浏览文件…</button>
+          <span class="picker-info">点击添加 · 再次点击移除</span>
+        </div>
+      </div>
+    </div>
     <svg width="0" height="0" style="position:absolute">
       <defs>
         <linearGradient id="ring-cpu-grad" x1="0%" y1="0%" x2="100%" y2="100%">
