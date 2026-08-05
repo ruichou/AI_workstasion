@@ -32,6 +32,7 @@ struct Config {
     city: String,
     lat: Option<f64>,
     lon: Option<f64>,
+    ai_url: String,
     apps: Vec<AppItem>,
 }
 
@@ -47,6 +48,7 @@ impl Default for Config {
             city: String::from("常州·湖塘"),
             lat: Some(31.7332),
             lon: Some(119.9649),
+            ai_url: String::from("https://www.qianwen.com/"),
             apps: vec![
                 blank("ChatGPT", "🤖"),
                 blank("OpenCode", "◯"),
@@ -295,6 +297,13 @@ fn split_args(input: &str) -> Vec<String> {
 
 #[tauri::command]
 fn launch_app(path: String, args: Option<String>) -> Result<(), String> {
+    if path.to_lowercase().ends_with(".lnk") {
+        std::process::Command::new("cmd")
+            .args(["/c", "start", "", &path])
+            .spawn()
+            .map_err(|e| format!("启动失败: {e}"))?;
+        return Ok(());
+    }
     let mut cmd = std::process::Command::new(&path);
     if let Some(a) = args {
         let a = a.trim();
@@ -410,53 +419,54 @@ mod audio {
 
     const CLSID_MM_DEVICE_ENUMERATOR: GUID = GUID::from_u128(0xBCDE0395_E52F_467C_8E3D_C4579291692E);
 
-    fn with_volume<R>(f: impl FnOnce(&IAudioEndpointVolume) -> R) -> Option<R> {
+    fn with_volume<R>(f: impl FnOnce(&IAudioEndpointVolume) -> Result<R, String>) -> Result<R, String> {
         unsafe {
             let hr = CoInitializeEx(None, COINIT(0));
             if hr.is_err() {
-                return None;
+                return Err(format!("COM 初始化失败: {hr}"));
             }
             let result = (|| {
                 let enumerator: IMMDeviceEnumerator =
                     match CoCreateInstance(&CLSID_MM_DEVICE_ENUMERATOR, None, CLSCTX(1)) {
                         Ok(e) => e,
-                        Err(_) => return None,
+                        Err(e) => return Err(format!("创建设备枚举器失败: {e}")),
                     };
                 let device = match enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
                     Ok(d) => d,
-                    Err(_) => return None,
+                    Err(e) => return Err(format!("获取默认音频输出设备失败: {e}")),
                 };
                 let volume = match device.Activate::<IAudioEndpointVolume>(CLSCTX(1), None) {
                     Ok(v) => v,
-                    Err(_) => return None,
+                    Err(e) => return Err(format!("激活音量接口失败: {e}")),
                 };
-                Some(f(&volume))
+                f(&volume)
             })();
             CoUninitialize();
             result
         }
     }
 
-    pub fn get_volume() -> Option<f32> {
-        with_volume(|v| unsafe { v.GetMasterVolumeLevelScalar().ok() }).flatten()
+    pub fn get_volume() -> Result<Option<f32>, String> {
+        with_volume(|v| unsafe { v.GetMasterVolumeLevelScalar() }
+            .map(Some)
+            .map_err(|e| format!("读取音量失败: {e}")))
     }
 
-    pub fn set_volume(level: f32) -> bool {
-        let ok = with_volume(|v| {
-            unsafe { v.SetMasterVolumeLevelScalar(level, &GUID::zeroed()) }.is_ok()
-        });
-        ok.unwrap_or(false)
+    pub fn set_volume(level: f32) -> Result<(), String> {
+        with_volume(|v| unsafe { v.SetMasterVolumeLevelScalar(level, &GUID::zeroed()) }
+            .map(|_| ())
+            .map_err(|e| format!("设置音量失败: {e}")))
     }
 }
 
 #[tauri::command]
-fn get_volume() -> Option<f32> {
+fn get_volume() -> Result<Option<f32>, String> {
     audio::get_volume()
 }
 
 #[tauri::command]
-fn set_volume(level: f32) {
-    audio::set_volume(level.clamp(0.0, 1.0));
+fn set_volume(level: f32) -> Result<(), String> {
+    audio::set_volume(level.clamp(0.0, 1.0))
 }
 
 #[tauri::command]
@@ -585,6 +595,20 @@ fn launch_tool(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn restore_eye_care(state: State<'_, AppState>) -> Result<(), String> {
+    let orig = state
+        .eye_ramp
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap_or_else(linear_ramp);
+    if !gamma::set_ramp(&orig) {
+        return Err(String::from("恢复色温失败"));
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn set_window_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
@@ -594,8 +618,18 @@ fn set_window_size(app: AppHandle, width: f64, height: f64) -> Result<(), String
 }
 
 #[tauri::command]
-fn open_ai_chat(question: String) -> Result<(), String> {
-    let url = format!("https://chat.qwen.ai/?q={}", urlencode(&question));
+fn open_ai_chat(state: State<'_, AppState>, question: String) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let base = if cfg.ai_url.trim().is_empty() {
+        String::from("https://www.qianwen.com/")
+    } else {
+        cfg.ai_url.clone()
+    };
+    let url = if base.contains("{q}") {
+        base.replace("{q}", &urlencode(&question))
+    } else {
+        base
+    };
     let candidates = [
         std::env::var("QUARK_EXE").unwrap_or_default(),
         String::from(r"C:\Program Files\Quark\Quark.exe"),
@@ -633,6 +667,129 @@ fn urlencode(s: &str) -> String {
     out
 }
 
+fn emoji_for(name: &str) -> String {
+    let n = name.to_lowercase();
+    if n.contains("chrome") { return "🌐".into() }
+    if n.contains("edge") { return "🧭".into() }
+    if n.contains("firefox") { return "🦊".into() }
+    if n.contains("wechat") || n.contains("微信") { return "💬".into() }
+    if n.contains("qq") { return "🐧".into() }
+    if n.contains("visual studio") || n.contains("code") { return "💻".into() }
+    if n.contains("typora") { return "📝".into() }
+    if n.contains("word") { return "📄".into() }
+    if n.contains("excel") { return "📊".into() }
+    if n.contains("powerpoint") { return "📽".into() }
+    if n.contains("obsidian") || n.contains("notion") { return "📓".into() }
+    if n.contains("steam") || n.contains("epic") { return "🎮".into() }
+    if n.contains("photoshop") || n.contains("illustrator") { return "🎨".into() }
+    if n.contains("xshell") { return "🖥".into() }
+    if n.contains("terminal") || n.contains("powershell") || n.contains("cmd") { return "⌨".into() }
+    if n.contains("spotify") || n.contains("music") || n.contains("网易云") || n.contains("qq音乐") { return "🎵".into() }
+    if n.contains("bilibili") || n.contains("哔哩") { return "📺".into() }
+    if n.contains("wps") || n.contains("office") { return "📋".into() }
+    if n.contains("百度") || n.contains("baidu") { return "🔍".into() }
+    if n.contains("迅雷") || n.contains("thunder") { return "⚡".into() }
+    if n.contains("微信开发者") { return "🛠".into() }
+    if n.contains("github") || n.contains("git") { return "🐙".into() }
+    "📦".into()
+}
+
+fn scan_dir_files(dir: &std::path::Path, max_depth: usize) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![(dir.to_path_buf(), 0usize)];
+    while let Some((d, depth)) = stack.pop() {
+        if let Ok(rd) = std::fs::read_dir(&d) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    if depth < max_depth {
+                        stack.push((p, depth + 1));
+                    }
+                } else {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    out
+}
+
+#[tauri::command]
+fn scan_apps() -> Vec<AppItem> {
+    let mut apps: Vec<AppItem> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut push = |name: String, path: String| {
+        if !name.is_empty() && seen.insert(name.clone()) {
+            apps.push(AppItem {
+                name,
+                path,
+                emoji: String::new(),
+                args: None,
+            });
+        }
+    };
+
+    // 1. 开始菜单快捷方式（用户 + 系统目录）
+    let mut start_dirs: Vec<String> = Vec::new();
+    if let Ok(ad) = std::env::var("APPDATA") {
+        start_dirs.push(ad + r"\Microsoft\Windows\Start Menu\Programs");
+    }
+    if let Ok(pd) = std::env::var("ProgramData") {
+        start_dirs.push(pd + r"\Microsoft\Windows\Start Menu\Programs");
+    }
+    for dir in start_dirs {
+        for f in scan_dir_files(std::path::Path::new(&dir), 3) {
+            if f.extension().map(|e| e.to_string_lossy().to_lowercase() == "lnk").unwrap_or(false) {
+                if let Some(stem) = f.file_stem() {
+                    let name = stem.to_string_lossy().to_string();
+                    if name.starts_with("卸载") || name.contains("Uninstall") || name.starts_with("删除") {
+                        continue;
+                    }
+                    push(name, f.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // 2. Program Files / (x86) 每个一级目录的主 exe（体积最大）
+    for pf in [r"C:\Program Files", r"C:\Program Files (x86)"] {
+        if let Ok(rd) = std::fs::read_dir(pf) {
+            for d in rd.flatten() {
+                let p = d.path();
+                if !p.is_dir() {
+                    continue;
+                }
+                let mut best: Option<(String, u64)> = None;
+                if let Ok(files) = std::fs::read_dir(&p) {
+                    for f in files.flatten() {
+                        let fp = f.path();
+                        if fp.extension().map(|e| e.to_string_lossy().to_lowercase() == "exe").unwrap_or(false) {
+                            if let Ok(md) = f.metadata() {
+                                if best.as_ref().map(|(_, s)| md.len() > *s).unwrap_or(true) {
+                                    best = Some((fp.to_string_lossy().to_string(), md.len()));
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some((path, _)) = best {
+                    if let Some(name) = p.file_name() {
+                        push(name.to_string_lossy().to_string(), path);
+                    }
+                }
+            }
+        }
+    }
+
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    for app in &mut apps {
+        if app.emoji.is_empty() {
+            app.emoji = emoji_for(&app.name);
+        }
+    }
+    apps
+}
+
 #[tauri::command]
 fn save_config(app: AppHandle, state: State<'_, AppState>, cfg: Config) -> Result<(), String> {
     let path = config_path(&app)?;
@@ -645,6 +802,7 @@ fn save_config(app: AppHandle, state: State<'_, AppState>, cfg: Config) -> Resul
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(AppState::new())
         .setup(|app| {
             let cfg = load_config(&app.handle());
@@ -669,7 +827,9 @@ pub fn run() {
             open_config,
             reload_config,
             open_ai_chat,
-            save_config
+            save_config,
+            scan_apps,
+            restore_eye_care
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

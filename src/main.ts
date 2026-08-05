@@ -2,6 +2,7 @@ import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 interface SysInfo {
   cpu: number;
@@ -184,6 +185,7 @@ function fmtClock() {
   if (mini) {
     mini.textContent = `${now.getMonth() + 1}月${now.getDate()}日 周${WEEK_CN[now.getDay()]} · 农历${l.monthCn}${l.dayCn}`;
   }
+  updateFestivals();
 }
 
 // ---------- 天气 ----------
@@ -261,13 +263,89 @@ async function refreshTemps() {
 let calYear = new Date().getFullYear();
 let calMonth = new Date().getMonth();
 
+const SOLAR_FEST: [number, number, string][] = [
+  [1, 1, "元旦"],
+  [2, 14, "情人节"],
+  [3, 8, "妇女节"],
+  [3, 12, "植树节"],
+  [5, 1, "劳动节"],
+  [5, 4, "青年节"],
+  [6, 1, "儿童节"],
+  [7, 1, "建党节"],
+  [8, 1, "建军节"],
+  [9, 10, "教师节"],
+  [10, 1, "国庆节"],
+  [12, 25, "圣诞节"],
+];
+
+const LUNAR_FEST: [number, number, string][] = [
+  [1, 1, "春节"],
+  [1, 15, "元宵节"],
+  [2, 2, "龙抬头"],
+  [5, 5, "端午节"],
+  [7, 7, "七夕"],
+  [8, 15, "中秋节"],
+  [9, 9, "重阳节"],
+  [12, 8, "腊八节"],
+];
+
+function lunar2solar(y: number, m: number, d: number): Date {
+  let offset = 0;
+  for (let i = 1900; i < y; i++) offset += lunarYearDays(i);
+  const leap = lunarLeapMonth(y);
+  for (let i = 1; i < m; i++) offset += lunarMonthDays(y, i);
+  if (leap > 0 && m > leap) offset += lunarLeapDays(y);
+  offset += d - 1;
+  return new Date(Date.UTC(1900, 0, 31) + offset * 86400000);
+}
+
+function dayFestival(y: number, m: number, d: number, l: { month: number; day: number }): string {
+  for (const [fm, fd, name] of SOLAR_FEST) {
+    if (fm === m && fd === d) return name;
+  }
+  for (const [fm, fd, name] of LUNAR_FEST) {
+    if (fm === l.month && fd === l.day) return name;
+  }
+  return "";
+}
+
+function fmtRemain(days: number): string {
+  if (days === 0) return "今天";
+  return `还有 ${days} 天`;
+}
+
+function updateFestivals() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const list: { name: string; t: number }[] = [];
+  for (const [m, dd, name] of SOLAR_FEST) {
+    let t = new Date(now.getFullYear(), m - 1, dd).getTime();
+    if (t < today) t = new Date(now.getFullYear() + 1, m - 1, dd).getTime();
+    list.push({ name, t });
+  }
+  for (const [m, dd, name] of LUNAR_FEST) {
+    let t = lunar2solar(now.getFullYear(), m, dd).getTime();
+    if (t < today) t = lunar2solar(now.getFullYear() + 1, m, dd).getTime();
+    list.push({ name, t });
+  }
+  list.sort((a, b) => a.t - b.t);
+  const next3 = list.slice(0, 3);
+  const el = $("cal-fest");
+  if (next3.length) {
+    el.textContent = next3.map((x) => `${x.name} ${fmtRemain(Math.round((x.t - today) / 86400000))}`).join(" · ");
+  } else {
+    el.textContent = "";
+  }
+}
+
 function renderCalendar() {
   $("cal-title").textContent = `${calYear}年${calMonth + 1}月`;
   const grid = $("cal-grid");
   grid.innerHTML = "";
-  ["一", "二", "三", "四", "五", "六", "日"].forEach((d) => {
+  ["一", "二", "三", "四", "五", "六", "日"].forEach((d, i) => {
     const el = document.createElement("div");
     el.className = "cal-dow";
+    if (i >= 5) el.classList.add("weekend");
     el.textContent = d;
     grid.appendChild(el);
   });
@@ -276,28 +354,37 @@ function renderCalendar() {
   const days = new Date(calYear, calMonth + 1, 0).getDate();
   const prevDays = new Date(calYear, calMonth, 0).getDate();
   const today = new Date();
-  for (let i = offset - 1; i >= 0; i--) {
+  const mkDay = (d: number, out: boolean) => {
     const el = document.createElement("div");
-    el.className = "cal-day out";
-    el.textContent = String(prevDays - i);
-    grid.appendChild(el);
-  }
-  for (let d = 1; d <= days; d++) {
-    const el = document.createElement("div");
-    el.className = "cal-day";
-    el.textContent = String(d);
+    el.className = `cal-day${out ? " out" : ""}`;
+    const dow = new Date(calYear, calMonth, d).getDay();
+    if (dow === 0 || dow === 6) el.classList.add("weekend");
+    const l = solar2lunar(calYear, calMonth, d);
+    const fest = dayFestival(calYear, calMonth + 1, d, l);
+    const tag = fest || l.dayCn;
+    const num = document.createElement("span");
+    num.className = "cal-num";
+    num.textContent = String(d);
+    const tg = document.createElement("span");
+    tg.className = `cal-tag${fest ? " fest" : ""}`;
+    tg.textContent = tag;
+    el.append(num, tg);
     if (d === today.getDate() && calMonth === today.getMonth() && calYear === today.getFullYear()) {
       el.classList.add("today");
     }
     grid.appendChild(el);
+  };
+  for (let i = offset - 1; i >= 0; i--) {
+    mkDay(prevDays - i, true);
+  }
+  for (let d = 1; d <= days; d++) {
+    mkDay(d, false);
   }
   const total = offset + days;
   for (let i = 1; total + i <= 42; i++) {
-    const el = document.createElement("div");
-    el.className = "cal-day out";
-    el.textContent = String(i);
-    grid.appendChild(el);
+    mkDay(i, true);
   }
+  updateFestivals();
 }
 
 // ---------- 待办 ----------
@@ -575,7 +662,9 @@ function initSettings() {
   sliderVol.addEventListener("input", () => {
     const pct = Number(sliderVol.value);
     $("val-volume").textContent = `${pct}%`;
-    invoke("set_volume", { level: pct / 100 }).catch(() => {});
+    invoke("set_volume", { level: pct / 100 }).catch((e) =>
+      toast(`音量调节失败：${e}`),
+    );
   });
 
   toggleEye.addEventListener("change", () => {
@@ -621,16 +710,32 @@ function initSettings() {
     $("btn-pin").style.opacity = "0.4";
   }
   $("btn-min").addEventListener("click", () => win.minimize());
-  $("btn-close").addEventListener("click", () => win.close());
+  $("btn-close").addEventListener("click", () => {
+    invoke("restore_eye_care")
+      .catch(() => {})
+      .finally(() => win.close());
+  });
 }
 
 // ---------- AI 对话 ----------
+let toastTimer: number | undefined;
+
+function toast(msg: string) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => t.classList.add("hidden"), 4500);
+}
+
 function initAi() {
   const input = $("ai-input") as HTMLTextAreaElement;
   const send = () => {
     const q = input.value.trim();
     if (!q) return;
+    writeText(q).catch(() => {});
     invoke("open_ai_chat", { question: q }).catch((e) => alert(e));
+    toast("已打开千问并复制问题，如页面未自动填入请按 Ctrl+V");
   };
   $("ai-send").addEventListener("click", send);
   input.addEventListener("keydown", (e) => {
@@ -644,8 +749,8 @@ function initAi() {
 // ---------- 缩服 ----------
 let collapsed = false;
 
-const MIN_W = 650;
-const MIN_H = 300;
+const MIN_W = 490;
+const MIN_H = 225;
 
 function initCollapse() {
   const win = getCurrentWindow();

@@ -524,8 +524,59 @@ body {
   border-radius: 8px;
   font-variant-numeric: tabular-nums;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  line-height: 1.1;
+  overflow: hidden;
+}
+
+.cal-num {
+  font-size: clamp(9.5px, 0.75vw, 12px);
+  line-height: 1.15;
+}
+
+.cal-tag {
+  font-size: clamp(6px, 0.45vw, 7px);
+  color: var(--text-muted);
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-tag.fest {
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.cal-day.weekend .cal-num {
+  color: #ff9a62;
+}
+
+.cal-day.out .cal-num {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.cal-day.out .cal-tag {
+  color: rgba(255, 255, 255, 0.12);
+}
+
+.cal-dow.weekend {
+  color: #ff9a62;
+}
+
+.cal-fest {
+  flex-shrink: 0;
+  margin-top: 6px;
+  font-size: clamp(9px, 0.7vw, 11.5px);
+  color: var(--text-2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cal-day.out {
@@ -1005,6 +1056,34 @@ body {
 
 .hidden {
   display: none !important;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(20, 24, 38, 0.92);
+  border: 1px solid rgba(74, 158, 255, 0.35);
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 12px;
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  animation: toast-in 0.25s ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* ---------- 矮窗口紧凑兜底 ---------- */
