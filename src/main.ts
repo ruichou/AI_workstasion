@@ -207,8 +207,8 @@ async function refreshWeather() {
     $("w-humid").textContent = `💧 湿度 ${Math.round(w.humidity)}%`;
     $("w-feels").textContent = `🌡 体感 ${Math.round(w.feels)}°`;
     $("w-wind").textContent = `🌬 风速 ${Math.round(w.wind)} km/h`;
-  } catch (e) {
-    $("w-desc").textContent = String(e);
+  } catch {
+    $("w-desc").textContent = "天气获取失败";
   }
 }
 
@@ -575,8 +575,8 @@ function initAi() {
 // ---------- 缩服 ----------
 let collapsed = false;
 
-const MIN_W = 960;
-const MIN_H = 620;
+const MIN_W = 920;
+const MIN_H = 560;
 
 function initCollapse() {
   const win = getCurrentWindow();
@@ -601,6 +601,57 @@ function initWindow() {
   win.setSize(new LogicalSize(1600, 900)).catch(() => {});
 }
 
+// ---------- 粒子背景 ----------
+function initParticles() {
+  const canvas = $("particles") as HTMLCanvasElement;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const resize = () => {
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+  };
+  resize();
+  window.addEventListener("resize", resize);
+  const COLORS = ["120,170,255", "180,120,255", "255,150,120", "80,220,220"];
+  const N = Math.max(30, Math.min(64, Math.floor(canvas.clientWidth / 28)));
+  const ps = Array.from({ length: N }, () => ({
+    x: Math.random(),
+    y: Math.random(),
+    r: Math.random() * 2.2 + 0.8,
+    vx: (Math.random() - 0.5) * 0.0003,
+    vy: -(Math.random() * 0.0004 + 0.00008),
+    a: Math.random() * 0.4 + 0.25,
+    c: COLORS[Math.floor(Math.random() * COLORS.length)],
+    tw: Math.random() * Math.PI * 2,
+  }));
+  let t = 0;
+  const tick = () => {
+    t += 0.016;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of ps) {
+      p.x += p.vx;
+      p.y += p.vy;
+      if (p.y < -0.03) {
+        p.y = 1.03;
+        p.x = Math.random();
+      }
+      if (p.x < -0.03) p.x = 1.03;
+      if (p.x > 1.03) p.x = -0.03;
+      const alpha = p.a * (0.6 + 0.4 * Math.sin(t * 1.6 + p.tw));
+      const grad = ctx.createRadialGradient(p.x * canvas.width, p.y * canvas.height, 0, p.x * canvas.width, p.y * canvas.height, p.r * 3 * dpr);
+      grad.addColorStop(0, `rgba(${p.c},${alpha.toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${p.c},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x * canvas.width, p.y * canvas.height, p.r * 3 * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
 // ---------- init ----------
 function init() {
   fmtClock();
@@ -615,6 +666,7 @@ function init() {
   initCollapse();
   initAi();
   initWindow();
+  initParticles();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);

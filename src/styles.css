@@ -34,10 +34,21 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 14px 18px 10px;
-  background: radial-gradient(120% 100% at 0% 0%, rgba(90, 90, 200, 0.14), transparent 50%),
-    radial-gradient(120% 100% at 100% 100%, rgba(155, 89, 182, 0.12), transparent 50%),
-    linear-gradient(165deg, rgba(13, 17, 23, var(--bg-a)) 0%, rgba(19, 26, 38, var(--bg-a)) 55%, rgba(10, 14, 20, var(--bg-a)) 100%);
+  padding: 10px 14px 8px;
+  background: radial-gradient(45% 60% at 12% 6%, rgba(90, 120, 255, calc(0.55 * var(--bg-a))), transparent 60%),
+    radial-gradient(40% 55% at 88% 12%, rgba(190, 90, 255, calc(0.5 * var(--bg-a))), transparent 62%),
+    radial-gradient(50% 65% at 78% 90%, rgba(255, 120, 80, calc(0.35 * var(--bg-a))), transparent 60%),
+    radial-gradient(45% 60% at 18% 92%, rgba(60, 220, 200, calc(0.38 * var(--bg-a))), transparent 60%),
+    linear-gradient(165deg, rgba(16, 20, 34, var(--bg-a)) 0%, rgba(27, 25, 50, var(--bg-a)) 55%, rgba(12, 14, 26, var(--bg-a)) 100%);
+  border-radius: 24px;
+}
+
+#particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
   border-radius: 24px;
 }
 
@@ -45,8 +56,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 4px 10px;
+  padding: 2px 4px 6px;
   flex-shrink: 0;
+  position: relative;
 }
 
 .brand {
@@ -61,6 +73,18 @@ body {
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   box-shadow: 0 0 12px rgba(74, 158, 255, 0.8);
+  animation: dot-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(74, 158, 255, 0.5);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(74, 158, 255, 0.95);
+    transform: scale(1.12);
+  }
 }
 
 .brand-name {
@@ -100,8 +124,8 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 3.15fr) minmax(0, 4.7fr) minmax(0, 2.4fr) minmax(0, 3.8fr);
-  grid-template-rows: minmax(150px, 5fr) minmax(200px, 7fr);
-  gap: 20px;
+  grid-template-rows: minmax(130px, 5fr) minmax(170px, 7fr);
+  gap: 14px;
   min-height: 0;
 }
 
@@ -110,17 +134,17 @@ body {
   grid-column: 4;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
   min-width: 0;
   min-height: 0;
 }
 
 .right-col .utils-card {
-  flex: 1.15;
+  flex: 1;
 }
 
 .right-col .settings-card {
-  flex: 1;
+  flex: 1.2;
   overflow-y: auto;
 }
 
@@ -135,7 +159,7 @@ body {
 }
 
 .ai-hint {
-  font-size: clamp(9px, 0.7vw, 11px);
+  font-size: clamp(8.5px, 0.7vw, 11px);
   color: var(--text-muted);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -159,7 +183,7 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: 10px;
   color: var(--text);
-  font-size: clamp(11px, 0.9vw, 14px);
+  font-size: clamp(10.5px, 0.9vw, 14px);
   font-family: inherit;
   padding: 10px 12px;
   outline: none;
@@ -175,7 +199,7 @@ body {
   border: none;
   border-radius: 10px;
   padding: clamp(8px, 1vh, 11px);
-  font-size: clamp(11px, 0.9vw, 14px);
+  font-size: clamp(10.5px, 0.9vw, 14px);
   font-weight: 600;
   color: #fff;
   background: linear-gradient(135deg, var(--accent), #6a5acd);
@@ -204,26 +228,45 @@ body {
   background: rgba(22, 27, 34, 0.62);
   border: 1px solid rgba(48, 54, 61, 0.6);
   border-radius: 14px;
-  padding: clamp(8px, 1vh, 14px) clamp(10px, 1vw, 16px);
+  padding: clamp(6px, 0.8vh, 12px) clamp(8px, 0.8vw, 14px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  animation: card-in 0.5s ease both;
 }
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.card:nth-child(2) { animation-delay: 0.05s; }
+.card:nth-child(3) { animation-delay: 0.1s; }
+.card:nth-child(4) { animation-delay: 0.15s; }
+.card:nth-child(5) { animation-delay: 0.2s; }
+.card:nth-child(6) { animation-delay: 0.25s; }
+.card:nth-child(7) { animation-delay: 0.3s; }
 
 .card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   flex-shrink: 0;
   gap: 8px;
 }
 
 .card-title {
-  font-size: clamp(12px, 1.05vw, 17px);
+  font-size: clamp(11px, 1.05vw, 17px);
   font-weight: 700;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -243,7 +286,7 @@ body {
 }
 
 .clock-time {
-  font-size: clamp(36px, 4.5vw, 66px);
+  font-size: clamp(32px, 4.5vw, 66px);
   font-weight: 700;
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
@@ -255,7 +298,7 @@ body {
 }
 
 .clock-sec {
-  font-size: clamp(14px, 1.4vw, 22px);
+  font-size: clamp(13px, 1.4vw, 22px);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -264,7 +307,7 @@ body {
   display: flex;
   gap: 14px;
   justify-content: center;
-  font-size: clamp(10px, 0.85vw, 13px);
+  font-size: clamp(9px, 0.85vw, 13px);
   margin: 2px 0 10px;
 }
 
@@ -283,17 +326,17 @@ body {
 }
 
 .w-emoji {
-  font-size: clamp(24px, 2.6vw, 42px);
+  font-size: clamp(22px, 2.6vw, 42px);
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35));
 }
 
 .w-temp {
-  font-size: clamp(22px, 2.5vw, 40px);
+  font-size: clamp(20px, 2.5vw, 40px);
   font-weight: 700;
 }
 
 .w-desc {
-  font-size: clamp(11px, 0.9vw, 14px);
+  font-size: clamp(10.5px, 0.9vw, 14px);
   color: var(--text-2);
 }
 
@@ -302,7 +345,7 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 4px 18px;
   margin-top: 12px;
-  font-size: clamp(9.5px, 0.8vw, 12.5px);
+  font-size: clamp(9px, 0.8vw, 12.5px);
   color: var(--text-muted);
   text-align: left;
   overflow: hidden;
@@ -336,8 +379,8 @@ body {
 
 .ring-box {
   position: relative;
-  width: clamp(58px, 8vw, 128px);
-  height: clamp(58px, 8vw, 128px);
+  width: clamp(52px, 8vw, 128px);
+  height: clamp(52px, 8vw, 128px);
   aspect-ratio: 1;
   flex-shrink: 0;
 }
@@ -385,7 +428,7 @@ body {
 }
 
 .ring-val {
-  font-size: clamp(14px, 1.6vw, 26px);
+  font-size: clamp(13px, 1.6vw, 26px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -434,7 +477,7 @@ body {
 }
 
 .cal-dow {
-  font-size: clamp(9px, 0.7vw, 11px);
+  font-size: clamp(8.5px, 0.7vw, 11px);
   color: var(--text-muted);
   padding: 4px 0;
 }
@@ -454,7 +497,16 @@ body {
   background: linear-gradient(135deg, var(--accent), #6a5acd);
   color: #fff;
   font-weight: 700;
-  box-shadow: 0 0 14px rgba(74, 158, 255, 0.45);
+  animation: today-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes today-glow {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(74, 158, 255, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(74, 158, 255, 0.75);
+  }
 }
 
 /* ---------- 待办 ---------- */
@@ -488,7 +540,7 @@ body {
   gap: 8px;
   padding: clamp(3px, 0.4vh, 5px) 4px;
   border-radius: 8px;
-  font-size: clamp(10.5px, 0.85vw, 13.5px);
+  font-size: clamp(9.5px, 0.85vw, 13.5px);
 }
 
 .todo-item:hover {
@@ -610,7 +662,7 @@ body {
 .tabs {
   display: flex;
   gap: 18px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   flex-shrink: 0;
 }
 
@@ -669,13 +721,13 @@ body {
 }
 
 .app-ico {
-  width: clamp(32px, 4vw, 64px);
-  height: clamp(32px, 4vw, 64px);
+  width: clamp(28px, 4vw, 64px);
+  height: clamp(28px, 4vw, 64px);
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(16px, 2vw, 30px);
+  font-size: clamp(14px, 2vw, 30px);
   border-radius: clamp(12px, 1.1vw, 16px);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
   border: 1px solid var(--glass-border);
@@ -690,7 +742,7 @@ body {
 }
 
 .app-name {
-  font-size: clamp(8px, 0.7vw, 10.5px);
+  font-size: clamp(7.5px, 0.7vw, 10.5px);
   color: var(--text-2);
   max-width: 100%;
   white-space: nowrap;
@@ -729,13 +781,13 @@ body {
 }
 
 .tool-ico {
-  width: clamp(26px, 3vw, 52px);
-  height: clamp(26px, 3vw, 52px);
+  width: clamp(24px, 3vw, 52px);
+  height: clamp(24px, 3vw, 52px);
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(13px, 1.6vw, 25px);
+  font-size: clamp(12px, 1.6vw, 25px);
   border-radius: clamp(10px, 0.9vw, 13px);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
   border: 1px solid var(--glass-border);
@@ -751,14 +803,14 @@ body {
 }
 
 .tools-grid .app-ico {
-  width: clamp(26px, 3vw, 52px);
-  height: clamp(26px, 3vw, 52px);
+  width: clamp(24px, 3vw, 52px);
+  height: clamp(24px, 3vw, 52px);
   border-radius: clamp(10px, 0.9vw, 13px);
-  font-size: clamp(13px, 1.6vw, 25px);
+  font-size: clamp(12px, 1.6vw, 25px);
 }
 
 .tools-grid .app-name {
-  font-size: clamp(9px, 0.7vw, 11px);
+  font-size: clamp(8.5px, 0.7vw, 11px);
 }
 
 /* ---------- 设置 ---------- */
@@ -845,17 +897,40 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 6px 2px;
+  padding: 6px 6px 2px;
   font-size: 11.5px;
   color: var(--text-muted);
+  position: relative;
 }
 
 .status-dot {
+  position: relative;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 8px rgba(46, 204, 113, 0.7);
+  animation: dot-pulse 2s ease-in-out infinite;
+}
+
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(46, 204, 113, 0.25);
+  animation: ring-ripple 2s ease-out infinite;
+}
+
+@keyframes ring-ripple {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
 }
 
 .sep {
@@ -865,6 +940,50 @@ body {
 
 .hidden {
   display: none !important;
+}
+
+/* ---------- 矮窗口紧凑兜底 ---------- */
+@media (max-height: 600px) {
+  .grid {
+    gap: 10px;
+  }
+  .tools-grid .app-ico {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+    border-radius: 7px;
+  }
+  .tools-grid .app-name {
+    font-size: 7.5px;
+  }
+  .tool-tile {
+    gap: 1px;
+    padding: 1px 0;
+  }
+  .tools-grid {
+    gap: 2px;
+  }
+  .set-row {
+    margin-bottom: 1px;
+  }
+  .set-label {
+    font-size: 9px;
+  }
+  .set-val {
+    font-size: 9.5px;
+  }
+  .set-row input[type="range"] {
+    height: 14px;
+  }
+  .card-head {
+    margin-bottom: 4px;
+  }
+  .card-title {
+    font-size: 12px;
+  }
+  .todo-item {
+    padding: 2px 4px;
+  }
 }
 
 /* ---------- 缩服模式 ---------- */
