@@ -37,29 +37,28 @@ struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let blank = |name: &str, emoji: &str| AppItem {
+            name: String::from(name),
+            path: String::new(),
+            emoji: String::from(emoji),
+            args: None,
+        };
         Self {
             city: String::from("北京"),
             lat: None,
             lon: None,
             apps: vec![
-                AppItem {
-                    name: String::from("资源管理器"),
-                    path: String::from(r"C:\Windows\explorer.exe"),
-                    emoji: String::from("🗂"),
-                    args: None,
-                },
-                AppItem {
-                    name: String::from("记事本"),
-                    path: String::from(r"C:\Windows\notepad.exe"),
-                    emoji: String::from("📝"),
-                    args: None,
-                },
-                AppItem {
-                    name: String::from("命令提示符"),
-                    path: String::from(r"C:\Windows\System32\cmd.exe"),
-                    emoji: String::from("⌨"),
-                    args: None,
-                },
+                blank("ChatGPT", "🤖"),
+                blank("OpenCode", "◯"),
+                blank("VS Code", "💻"),
+                blank("微信开发者工具", "🛠"),
+                blank("Chrome", "🌐"),
+                blank("DeepSeek", "🧠"),
+                blank("Mimo", "🎨"),
+                blank("Xshell", "🖥"),
+                blank("Typora", "📝"),
+                blank("GitHub", "🐙"),
+                blank("服务器管理", "☁️"),
             ],
         }
     }
@@ -518,6 +517,36 @@ fn set_eye_care(state: State<'_, AppState>, enabled: bool, intensity: f64) -> Re
     Ok(())
 }
 
+#[tauri::command]
+fn launch_tool(id: String) -> Result<(), String> {
+    let (path, args) = match id.as_str() {
+        "explorer" => ("explorer.exe", ""),
+        "notepad" => ("notepad.exe", ""),
+        "cmd" => ("cmd.exe", ""),
+        "snipping" => ("SnippingTool.exe", ""),
+        "calc" => ("calc.exe", ""),
+        "recycle" => ("explorer.exe", "shell:RecycleBinFolder"),
+        "control" => ("control.exe", ""),
+        "taskmgr" => ("taskmgr.exe", ""),
+        other => return Err(format!("未知工具: {other}")),
+    };
+    let mut cmd = std::process::Command::new(path);
+    if !args.is_empty() {
+        cmd.arg(args);
+    }
+    cmd.spawn().map_err(|e| format!("启动失败: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_window_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let win = app
+        .get_webview_window("main")
+        .ok_or_else(|| String::from("找不到主窗口"))?;
+    win.set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::new())
@@ -537,8 +566,10 @@ pub fn run() {
             get_volume,
             set_volume,
             set_window_opacity,
+            set_window_size,
             set_eye_care,
             launch_app,
+            launch_tool,
             open_config,
             reload_config
         ])

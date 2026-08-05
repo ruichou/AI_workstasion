@@ -20,99 +20,166 @@
         </div>
       </header>
 
-      <div id="settings-panel" class="settings-panel hidden">
-        <div class="set-title">设置</div>
-        <div class="set-row">
-          <span class="set-label">透明度</span>
-          <input type="range" id="slider-opacity" min="0" max="100" value="100" />
-          <span class="set-val" id="val-opacity">100%</span>
-        </div>
-        <div class="set-row">
-          <span class="set-label">音量</span>
-          <input type="range" id="slider-volume" min="0" max="100" value="50" />
-          <span class="set-val" id="val-volume">50%</span>
-        </div>
-        <div class="set-row">
-          <span class="set-label">护眼模式</span>
-          <label class="switch">
-            <input type="checkbox" id="toggle-eyecare" />
-            <span class="switch-track"></span>
-          </label>
-        </div>
-        <div class="set-row">
-          <span class="set-label">护眼强度</span>
-          <input type="range" id="slider-eyecare" min="10" max="70" value="35" />
-          <span class="set-val" id="val-eyecare">35%</span>
-        </div>
-      </div>
-
-      <main class="h-main">
-        <section class="seg clock-seg">
+      <main class="grid">
+        <!-- 行 1：时间+天气 -->
+        <section class="card clock-card">
           <div class="time-row">
             <span id="clock-time" class="clock-time">--:--</span>
             <span id="clock-sec" class="clock-sec">--</span>
           </div>
-          <div id="clock-date" class="clock-date">----年--月--日 星期-</div>
-        </section>
-
-        <section class="seg weather-seg">
-          <span id="w-emoji" class="w-emoji">🌤</span>
-          <div class="w-mid">
+          <div class="clock-sub">
+            <span id="clock-date" class="clock-date">----年--月--日 星期-</span>
+            <span id="clock-lunar" class="clock-lunar">农历--</span>
+          </div>
+          <div class="weather-box">
+            <span id="w-emoji" class="w-emoji">🌤</span>
             <div class="w-temp" id="w-temp">--°</div>
             <div class="w-desc" id="w-desc">加载中…</div>
           </div>
-          <div class="w-meta">
-            <div class="w-line" id="w-city">--</div>
-            <div class="w-line" id="w-humid">💧 --%</div>
-            <div class="w-line" id="w-wind">🌬 --</div>
+          <div class="weather-meta">
+            <div class="w-line" id="w-city">📍 --</div>
+            <div class="w-line" id="w-humid">💧 湿度 --%</div>
+            <div class="w-line" id="w-feels">🌡 体感 --°</div>
+            <div class="w-line" id="w-wind">🌬 风速 --</div>
           </div>
         </section>
 
-        <section class="seg sys-seg">
-          <div class="sys-row">
-            <span class="sys-label">CPU</span>
-            <div class="bar"><div id="bar-cpu" class="bar-fill"></div></div>
-            <span class="sys-val" id="val-cpu">--%</span>
+        <!-- 行 1：系统状态 -->
+        <section class="card sys-card">
+          <div class="card-head">
+            <span class="card-title">系统状态</span>
+            <span class="status-good">● 运行良好</span>
           </div>
-          <div class="sys-row">
-            <span class="sys-label">内存</span>
-            <div class="bar"><div id="bar-mem" class="bar-fill"></div></div>
-            <span class="sys-val" id="val-mem">--</span>
-          </div>
-          <div class="sys-row">
-            <span class="sys-label">磁盘</span>
-            <div class="bar"><div id="bar-disk" class="bar-fill"></div></div>
-            <span class="sys-val" id="val-disk">--</span>
-          </div>
-          <div class="sys-row temp-row">
-            <span class="sys-label">CPU温</span>
-            <span class="sys-val" id="val-cputemp">--</span>
-          </div>
-          <div class="sys-row temp-row">
-            <span class="sys-label">硬盘温</span>
-            <span class="sys-val" id="val-disktemp">--</span>
+          <div class="sys-rings">
+            <div class="ring-box">
+              <svg class="ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50" />
+                <circle id="ring-cpu" class="ring-fg" cx="60" cy="60" r="50" />
+              </svg>
+              <div class="ring-center">
+                <div class="ring-val" id="val-cpu">--%</div>
+                <div class="ring-label">CPU</div>
+                <div class="ring-sub" id="val-cputemp">--</div>
+              </div>
+            </div>
+            <div class="ring-box">
+              <svg class="ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50" />
+                <circle id="ring-mem" class="ring-fg" cx="60" cy="60" r="50" />
+              </svg>
+              <div class="ring-center">
+                <div class="ring-val" id="val-mem-pct">--%</div>
+                <div class="ring-label">内存</div>
+                <div class="ring-sub" id="val-mem">--</div>
+              </div>
+            </div>
+            <div class="ring-box">
+              <svg class="ring" viewBox="0 0 120 120">
+                <circle class="ring-bg" cx="60" cy="60" r="50" />
+                <circle id="ring-disk" class="ring-fg" cx="60" cy="60" r="50" />
+              </svg>
+              <div class="ring-center">
+                <div class="ring-val" id="val-disk-pct">--%</div>
+                <div class="ring-label">硬盘 (C:)</div>
+                <div class="ring-sub" id="val-disk">--</div>
+                <div class="ring-sub" id="val-disktemp"></div>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section class="seg cal-seg">
-          <div class="cal-head">
-            <button id="cal-prev" class="cal-nav">‹</button>
-            <span id="cal-title" class="cal-title">--月</span>
-            <button id="cal-next" class="cal-nav">›</button>
+        <!-- 行 1：日历 -->
+        <section class="card cal-card">
+          <div class="card-head">
+            <span id="cal-title" class="card-title">----年--月</span>
+            <div class="cal-navs">
+              <button id="cal-prev" class="cal-nav">‹</button>
+              <button id="cal-next" class="cal-nav">›</button>
+            </div>
           </div>
           <div id="cal-grid" class="cal-grid"></div>
         </section>
 
-        <section class="seg apps-seg">
-          <div class="apps-head">
-            <span class="apps-title">快捷启动</span>
-            <button id="btn-config" class="apps-edit" title="编辑配置">⚙</button>
+        <!-- 行 1：待办 -->
+        <section class="card todo-card">
+          <div class="card-head">
+            <span class="card-title">待办事项</span>
+            <button id="btn-todo-add" class="text-btn">+ 添加</button>
+          </div>
+          <div id="todo-list" class="todo-list"></div>
+          <div class="todo-progress">
+            <span id="todo-count" class="todo-count">已完成 0/0</span>
+            <div class="todo-bar"><div id="todo-fill" class="todo-fill"></div></div>
+          </div>
+        </section>
+
+        <!-- 行 2：快捷启动 -->
+        <section class="card launch-card">
+          <div class="card-head">
+            <span class="card-title">快捷启动</span>
+            <button id="btn-collapse" class="text-btn">缩服</button>
+          </div>
+          <div class="tabs">
+            <button id="tab-apps" class="tab active">应用程序</button>
+            <button id="tab-folders" class="tab">文件夹</button>
           </div>
           <div id="apps-grid" class="apps-grid"></div>
-          <div id="apps-empty" class="apps-empty hidden">点 ⚙ 添加应用</div>
+          <div id="folders-grid" class="apps-grid hidden"></div>
+        </section>
+
+        <!-- 行 2：实用工具 + 系统设置 -->
+        <section class="card utils-card">
+          <div class="card-head">
+            <span class="card-title">实用工具</span>
+          </div>
+          <div id="tools-grid" class="tools-grid"></div>
+          <div class="set-title">系统设置</div>
+          <div class="set-row">
+            <span class="set-label">透明度</span>
+            <input type="range" id="slider-opacity" min="0" max="100" value="100" />
+            <span class="set-val" id="val-opacity">100%</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">音量</span>
+            <input type="range" id="slider-volume" min="0" max="100" value="50" />
+            <span class="set-val" id="val-volume">50%</span>
+          </div>
+          <div class="set-row">
+            <span class="set-label">护眼模式</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-eyecare" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="set-row">
+            <span class="set-label">护眼强度</span>
+            <input type="range" id="slider-eyecare" min="10" max="70" value="35" />
+            <span class="set-val" id="val-eyecare">35%</span>
+          </div>
         </section>
       </main>
+
+      <footer class="statusbar">
+        <span class="status-dot"></span>
+        <span>已连接</span>
+        <span class="sep">|</span>
+        <span>版本: v1.0.0</span>
+      </footer>
+
+      <div id="mini-bar" class="mini-bar hidden" data-tauri-drag-region>
+        <span class="mini-brand" data-tauri-drag-region>● 工作台</span>
+        <span id="mini-time" class="mini-time">--:--</span>
+        <span id="mini-date" class="mini-date">----年--月--日</span>
+      </div>
     </div>
+    <svg width="0" height="0" style="position:absolute">
+      <defs>
+        <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00ffff" />
+          <stop offset="100%" stop-color="#9b59b6" />
+        </linearGradient>
+      </defs>
+    </svg>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
