@@ -366,11 +366,24 @@ mod temps {
         for row in rows {
             if let Some(Variant::UI2(n)) = row.get("Temperature") {
                 if *n > 0 && *n < 150 {
-                    return Some(*n as f32);
+                    best = Some(best.map_or(*n as f32, |b| b.max(*n as f32)));
                 }
             }
         }
-        None
+        if best.is_some() {
+            return best;
+        }
+        let rows: Vec<HashMap<String, Variant>> = conn
+            .raw_query("SELECT * FROM MSFT_StorageHealth")
+            .ok()?;
+        for row in rows {
+            if let Some(Variant::UI2(n)) = row.get("Temperature") {
+                if *n > 0 && *n < 150 {
+                    best = Some(best.map_or(*n as f32, |b| b.max(*n as f32)));
+                }
+            }
+        }
+        best
     }
 }
 
@@ -579,6 +592,46 @@ fn set_window_size(app: AppHandle, width: f64, height: f64) -> Result<(), String
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn open_ai_chat(question: String) -> Result<(), String> {
+    let url = format!("https://chat.qwen.ai/?q={}", urlencode(&question));
+    let candidates = [
+        std::env::var("QUARK_EXE").unwrap_or_default(),
+        String::from(r"C:\Program Files\Quark\Quark.exe"),
+        String::from(r"C:\Program Files (x86)\Quark\Quark.exe"),
+        String::from(r"C:\Program Files\Quark\Application\Quark.exe"),
+        String::from(r"C:\Program Files (x86)\Quark\Application\Quark.exe"),
+    ];
+    let quark = candidates
+        .iter()
+        .find(|p| !p.is_empty() && std::path::Path::new(p).exists());
+    if let Some(exe) = quark {
+        std::process::Command::new(exe)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("启动夸克失败: {e}"))?;
+        return Ok(());
+    }
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "", &url])
+        .spawn()
+        .map_err(|e| format!("打开浏览器失败: {e}"))?;
+    Ok(())
+}
+
+fn urlencode(s: &str) -> String {
+    let mut out = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::new())
@@ -603,7 +656,8 @@ pub fn run() {
             launch_app,
             launch_tool,
             open_config,
-            reload_config
+            reload_config,
+            open_ai_chat
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

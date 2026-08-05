@@ -475,8 +475,6 @@ function renderTools() {
 }
 
 // ---------- 设置 ----------
-let lastOpacity = 1;
-
 function initSettings() {
   const win = getCurrentWindow();
   const sliderOp = $("slider-opacity") as HTMLInputElement;
@@ -485,10 +483,9 @@ function initSettings() {
   const toggleEye = $("toggle-eyecare") as HTMLInputElement;
 
   const savedOp = Number(localStorage.getItem("opacity") ?? "100");
-  lastOpacity = savedOp / 100;
   sliderOp.value = String(savedOp);
   $("val-opacity").textContent = `${savedOp}%`;
-  invoke("set_window_opacity", { level: lastOpacity }).catch(() => {});
+  document.documentElement.style.setProperty("--bg-a", String(savedOp / 100));
 
   const savedEye = localStorage.getItem("eyecare") === "1";
   const savedEyeInt = Number(localStorage.getItem("eyecare-int") ?? "35");
@@ -512,10 +509,9 @@ function initSettings() {
 
   sliderOp.addEventListener("input", () => {
     const pct = Number(sliderOp.value);
-    lastOpacity = pct / 100;
     $("val-opacity").textContent = `${pct}%`;
     localStorage.setItem("opacity", String(pct));
-    invoke("set_window_opacity", { level: lastOpacity }).catch(() => {});
+    document.documentElement.style.setProperty("--bg-a", String(pct / 100));
   });
 
   sliderVol.addEventListener("input", () => {
@@ -540,14 +536,8 @@ function initSettings() {
     }
   });
 
-  win.onFocusChanged(({ payload }) => {
-    if (payload && lastOpacity < 0.05) {
-      lastOpacity = 0.6;
-      localStorage.setItem("opacity", "60");
-      sliderOp.value = "60";
-      $("val-opacity").textContent = "60%";
-      invoke("set_window_opacity", { level: 0.6 }).catch(() => {});
-    }
+  win.onFocusChanged(() => {
+    /* no-op: opacity now affects background only via CSS var */
   });
 
   $("btn-pin").addEventListener("click", () => {
@@ -565,11 +555,28 @@ function initSettings() {
   $("btn-close").addEventListener("click", () => win.close());
 }
 
+// ---------- AI 对话 ----------
+function initAi() {
+  const input = $("ai-input") as HTMLTextAreaElement;
+  const send = () => {
+    const q = input.value.trim();
+    if (!q) return;
+    invoke("open_ai_chat", { question: q }).catch((e) => alert(e));
+  };
+  $("ai-send").addEventListener("click", send);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+}
+
 // ---------- 缩服 ----------
 let collapsed = false;
 
-const MIN_W = 1100;
-const MIN_H = 668;
+const MIN_W = 960;
+const MIN_H = 620;
 
 function initCollapse() {
   const win = getCurrentWindow();
@@ -606,6 +613,7 @@ function init() {
   refreshWeather();
   initSettings();
   initCollapse();
+  initAi();
   initWindow();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);

@@ -10,6 +10,7 @@
   --green: #2ecc71;
   --orange: #ff9800;
   --red: #e74c3c;
+  --bg-a: 1;
 }
 
 * {
@@ -25,7 +26,7 @@ body {
   overflow: hidden;
   font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, "Microsoft YaHei UI", sans-serif;
   color: var(--text);
-  background: #0d0d1a;
+  background: transparent;
 }
 
 #app {
@@ -36,7 +37,7 @@ body {
   padding: 14px 18px 10px;
   background: radial-gradient(120% 100% at 0% 0%, rgba(90, 90, 200, 0.14), transparent 50%),
     radial-gradient(120% 100% at 100% 100%, rgba(155, 89, 182, 0.12), transparent 50%),
-    linear-gradient(165deg, #0d1117 0%, #131a26 55%, #0a0e14 100%);
+    linear-gradient(165deg, rgba(13, 17, 23, var(--bg-a)) 0%, rgba(19, 26, 38, var(--bg-a)) 55%, rgba(10, 14, 20, var(--bg-a)) 100%);
   border-radius: 24px;
 }
 
@@ -99,7 +100,7 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 3.15fr) minmax(0, 4.7fr) minmax(0, 2.4fr) minmax(0, 3.8fr);
-  grid-template-rows: minmax(230px, 5fr) minmax(330px, 7fr);
+  grid-template-rows: minmax(150px, 5fr) minmax(200px, 7fr);
   gap: 20px;
   min-height: 0;
 }
@@ -109,7 +110,7 @@ body {
   grid-column: 4;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-width: 0;
   min-height: 0;
 }
@@ -120,18 +121,90 @@ body {
 
 .right-col .settings-card {
   flex: 1;
+  overflow-y: auto;
 }
 
 .launch-card {
   grid-row: 2;
-  grid-column: 1 / span 3;
+  grid-column: 1 / span 2;
+}
+
+.ai-card {
+  grid-row: 2;
+  grid-column: 3;
+}
+
+.ai-hint {
+  font-size: clamp(9px, 0.7vw, 11px);
+  color: var(--text-muted);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  padding: 2px 8px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.ai-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.ai-input {
+  flex: 1;
+  resize: none;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: clamp(11px, 0.9vw, 14px);
+  font-family: inherit;
+  padding: 10px 12px;
+  outline: none;
+  line-height: 1.5;
+  user-select: text;
+}
+
+.ai-input::placeholder {
+  color: var(--text-muted);
+}
+
+.ai-send {
+  border: none;
+  border-radius: 10px;
+  padding: clamp(8px, 1vh, 11px);
+  font-size: clamp(11px, 0.9vw, 14px);
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), #6a5acd);
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+
+.ai-send:hover {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.ai-tips {
+  font-size: clamp(10px, 0.7vw, 11.5px);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ai-card {
+  grid-row: 2;
+  grid-column: 3;
 }
 
 .card {
   background: rgba(22, 27, 34, 0.62);
   border: 1px solid rgba(48, 54, 61, 0.6);
   border-radius: 14px;
-  padding: clamp(10px, 1vh, 14px) clamp(12px, 1vw, 16px);
+  padding: clamp(8px, 1vh, 14px) clamp(10px, 1vw, 16px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
@@ -150,7 +223,7 @@ body {
 }
 
 .card-title {
-  font-size: clamp(14px, 1.05vw, 17px);
+  font-size: clamp(12px, 1.05vw, 17px);
   font-weight: 700;
   letter-spacing: 0.5px;
   white-space: nowrap;
@@ -170,7 +243,7 @@ body {
 }
 
 .clock-time {
-  font-size: clamp(48px, 4.5vw, 66px);
+  font-size: clamp(36px, 4.5vw, 66px);
   font-weight: 700;
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
@@ -182,7 +255,7 @@ body {
 }
 
 .clock-sec {
-  font-size: clamp(16px, 1.4vw, 22px);
+  font-size: clamp(14px, 1.4vw, 22px);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -191,7 +264,7 @@ body {
   display: flex;
   gap: 14px;
   justify-content: center;
-  font-size: clamp(11px, 0.85vw, 13px);
+  font-size: clamp(10px, 0.85vw, 13px);
   margin: 2px 0 10px;
 }
 
@@ -210,17 +283,17 @@ body {
 }
 
 .w-emoji {
-  font-size: clamp(30px, 2.6vw, 42px);
+  font-size: clamp(24px, 2.6vw, 42px);
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.35));
 }
 
 .w-temp {
-  font-size: clamp(28px, 2.5vw, 40px);
+  font-size: clamp(22px, 2.5vw, 40px);
   font-weight: 700;
 }
 
 .w-desc {
-  font-size: clamp(12px, 0.9vw, 14px);
+  font-size: clamp(11px, 0.9vw, 14px);
   color: var(--text-2);
 }
 
@@ -229,14 +302,22 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 4px 18px;
   margin-top: 12px;
-  font-size: clamp(10.5px, 0.8vw, 12.5px);
+  font-size: clamp(9.5px, 0.8vw, 12.5px);
   color: var(--text-muted);
   text-align: left;
+  overflow: hidden;
+}
+
+.w-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 /* ---------- 系统状态 ---------- */
 .status-good {
-  font-size: clamp(11px, 0.8vw, 12.5px);
+  font-size: clamp(10px, 0.8vw, 12.5px);
   color: var(--green);
   background: rgba(46, 204, 113, 0.12);
   border: 1px solid rgba(46, 204, 113, 0.3);
@@ -255,8 +336,8 @@ body {
 
 .ring-box {
   position: relative;
-  width: clamp(86px, 8vw, 128px);
-  height: clamp(86px, 8vw, 128px);
+  width: clamp(58px, 8vw, 128px);
+  height: clamp(58px, 8vw, 128px);
   aspect-ratio: 1;
   flex-shrink: 0;
 }
@@ -304,19 +385,19 @@ body {
 }
 
 .ring-val {
-  font-size: clamp(17px, 1.6vw, 26px);
+  font-size: clamp(14px, 1.6vw, 26px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .ring-label {
-  font-size: clamp(10px, 0.75vw, 12px);
+  font-size: clamp(9px, 0.75vw, 12px);
   color: var(--text-2);
   margin-top: 1px;
 }
 
 .ring-sub {
-  font-size: clamp(9px, 0.65vw, 10.5px);
+  font-size: clamp(8px, 0.65vw, 10.5px);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -353,13 +434,13 @@ body {
 }
 
 .cal-dow {
-  font-size: clamp(10px, 0.7vw, 11px);
+  font-size: clamp(9px, 0.7vw, 11px);
   color: var(--text-muted);
   padding: 4px 0;
 }
 
 .cal-day {
-  font-size: clamp(11px, 0.8vw, 12.5px);
+  font-size: clamp(10px, 0.8vw, 12.5px);
   padding: clamp(2px, 0.35vh, 4px) 0;
   border-radius: 8px;
   font-variant-numeric: tabular-nums;
@@ -407,7 +488,7 @@ body {
   gap: 8px;
   padding: clamp(3px, 0.4vh, 5px) 4px;
   border-radius: 8px;
-  font-size: clamp(12px, 0.85vw, 13.5px);
+  font-size: clamp(10.5px, 0.85vw, 13.5px);
 }
 
 .todo-item:hover {
@@ -588,13 +669,13 @@ body {
 }
 
 .app-ico {
-  width: clamp(46px, 4vw, 64px);
-  height: clamp(46px, 4vw, 64px);
+  width: clamp(32px, 4vw, 64px);
+  height: clamp(32px, 4vw, 64px);
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(22px, 2vw, 30px);
+  font-size: clamp(16px, 2vw, 30px);
   border-radius: clamp(12px, 1.1vw, 16px);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
   border: 1px solid var(--glass-border);
@@ -609,7 +690,7 @@ body {
 }
 
 .app-name {
-  font-size: clamp(9px, 0.7vw, 10.5px);
+  font-size: clamp(8px, 0.7vw, 10.5px);
   color: var(--text-2);
   max-width: 100%;
   white-space: nowrap;
@@ -648,13 +729,13 @@ body {
 }
 
 .tool-ico {
-  width: clamp(38px, 3vw, 52px);
-  height: clamp(38px, 3vw, 52px);
+  width: clamp(26px, 3vw, 52px);
+  height: clamp(26px, 3vw, 52px);
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(19px, 1.6vw, 25px);
+  font-size: clamp(13px, 1.6vw, 25px);
   border-radius: clamp(10px, 0.9vw, 13px);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
   border: 1px solid var(--glass-border);
@@ -670,10 +751,10 @@ body {
 }
 
 .tools-grid .app-ico {
-  width: clamp(38px, 3vw, 52px);
-  height: clamp(38px, 3vw, 52px);
+  width: clamp(26px, 3vw, 52px);
+  height: clamp(26px, 3vw, 52px);
   border-radius: clamp(10px, 0.9vw, 13px);
-  font-size: clamp(19px, 1.6vw, 25px);
+  font-size: clamp(13px, 1.6vw, 25px);
 }
 
 .tools-grid .app-name {
@@ -685,7 +766,7 @@ body {
   display: flex;
   align-items: center;
   gap: clamp(6px, 0.6vw, 10px);
-  margin-bottom: clamp(4px, 0.5vh, 8px);
+  margin-bottom: clamp(2px, 0.4vh, 8px);
   flex-shrink: 0;
 }
 
@@ -695,7 +776,7 @@ body {
 
 .set-label {
   width: clamp(48px, 3.5vw, 56px);
-  font-size: clamp(10.5px, 0.75vw, 12px);
+  font-size: clamp(9.5px, 0.75vw, 12px);
   color: var(--text-2);
   flex-shrink: 0;
 }
