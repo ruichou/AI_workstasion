@@ -441,7 +441,8 @@ async function refreshApps() {
     appsGrid.appendChild(
       tile(app.name, app.emoji || "📦", () => {
         if (!app.path) {
-          alert(`「${app.name}」未配置路径，请点击右上 ⚙ 打开配置文件设置`);
+          alert(`「${app.name}」未配置路径，已打开配置文件，请填写 path 后保存`);
+          invoke("open_config").catch((e) => alert(e));
           return;
         }
         invoke("launch_app", { path: app.path, args: app.args }).catch((e) => alert(e));
@@ -540,8 +541,19 @@ function initSettings() {
     }
   });
 
-  win.onFocusChanged(() => {
-    /* no-op: opacity now affects background only via CSS var */
+  let configOpened = false;
+  $("btn-settings").addEventListener("click", () => {
+    invoke("open_config").catch((e) => alert(e));
+    configOpened = true;
+  });
+
+  win.onFocusChanged(({ payload }) => {
+    if (payload && configOpened) {
+      configOpened = false;
+      invoke("reload_config")
+        .then(() => refreshApps())
+        .catch(() => {});
+    }
   });
 
   $("btn-pin").addEventListener("click", () => {
