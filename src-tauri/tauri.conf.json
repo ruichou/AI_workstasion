@@ -16,6 +16,8 @@
         "title": "Glass Workspace",
         "width": 1600,
         "height": 900,
+        "minWidth": 1600,
+        "minHeight": 900,
         "transparent": false,
         "decorations": false,
         "alwaysOnTop": true,

@@ -1,6 +1,6 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 interface SysInfo {
   cpu: number;
@@ -568,14 +568,30 @@ function initSettings() {
 // ---------- 缩服 ----------
 let collapsed = false;
 
+const MIN_W = 1100;
+const MIN_H = 668;
+
 function initCollapse() {
+  const win = getCurrentWindow();
   $("btn-collapse").addEventListener("click", () => {
     collapsed = !collapsed;
     document.body.classList.toggle("collapsed", collapsed);
     $("btn-collapse").textContent = collapsed ? "展开" : "缩服";
     $("mini-bar").classList.toggle("hidden", !collapsed);
+    if (collapsed) {
+      win.setMinSize(new LogicalSize(360, 110)).catch(() => {});
+    } else {
+      win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
+    }
     invoke("set_window_size", { width: collapsed ? 360 : 1600, height: collapsed ? 110 : 900 }).catch(() => {});
   });
+}
+
+// ---------- 窗口初始化 ----------
+function initWindow() {
+  const win = getCurrentWindow();
+  win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
+  win.setSize(new LogicalSize(1600, 900)).catch(() => {});
 }
 
 // ---------- init ----------
@@ -590,6 +606,7 @@ function init() {
   refreshWeather();
   initSettings();
   initCollapse();
+  initWindow();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);

@@ -54,7 +54,7 @@
             <div class="ring-box">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
-                <circle id="ring-cpu" class="ring-fg" cx="60" cy="60" r="50" />
+                <circle id="ring-cpu" class="ring-fg cpu" cx="60" cy="60" r="50" />
               </svg>
               <div class="ring-center">
                 <div class="ring-val" id="val-cpu">--%</div>
@@ -65,7 +65,7 @@
             <div class="ring-box">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
-                <circle id="ring-mem" class="ring-fg" cx="60" cy="60" r="50" />
+                <circle id="ring-mem" class="ring-fg mem" cx="60" cy="60" r="50" />
               </svg>
               <div class="ring-center">
                 <div class="ring-val" id="val-mem-pct">--%</div>
@@ -76,7 +76,7 @@
             <div class="ring-box">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
-                <circle id="ring-disk" class="ring-fg" cx="60" cy="60" r="50" />
+                <circle id="ring-disk" class="ring-fg disk" cx="60" cy="60" r="50" />
               </svg>
               <div class="ring-center">
                 <div class="ring-val" id="val-disk-pct">--%</div>
@@ -127,36 +127,42 @@
           <div id="folders-grid" class="apps-grid hidden"></div>
         </section>
 
-        <!-- 行 2：实用工具 + 系统设置 -->
-        <section class="card utils-card">
-          <div class="card-head">
-            <span class="card-title">实用工具</span>
-          </div>
-          <div id="tools-grid" class="tools-grid"></div>
-          <div class="set-title">系统设置</div>
-          <div class="set-row">
-            <span class="set-label">透明度</span>
-            <input type="range" id="slider-opacity" min="0" max="100" value="100" />
-            <span class="set-val" id="val-opacity">100%</span>
-          </div>
-          <div class="set-row">
-            <span class="set-label">音量</span>
-            <input type="range" id="slider-volume" min="0" max="100" value="50" />
-            <span class="set-val" id="val-volume">50%</span>
-          </div>
-          <div class="set-row">
-            <span class="set-label">护眼模式</span>
-            <label class="switch">
-              <input type="checkbox" id="toggle-eyecare" />
-              <span class="switch-track"></span>
-            </label>
-          </div>
-          <div class="set-row">
-            <span class="set-label">护眼强度</span>
-            <input type="range" id="slider-eyecare" min="10" max="70" value="35" />
-            <span class="set-val" id="val-eyecare">35%</span>
-          </div>
-        </section>
+        <!-- 行 2 右列：实用工具 + 系统设置 -->
+        <div class="right-col">
+          <section class="card utils-card">
+            <div class="card-head">
+              <span class="card-title">实用工具</span>
+            </div>
+            <div id="tools-grid" class="tools-grid"></div>
+          </section>
+          <section class="card settings-card">
+            <div class="card-head">
+              <span class="card-title">系统设置</span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">透明度</span>
+              <input type="range" id="slider-opacity" min="0" max="100" value="100" />
+              <span class="set-val" id="val-opacity">100%</span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">音量</span>
+              <input type="range" id="slider-volume" min="0" max="100" value="50" />
+              <span class="set-val" id="val-volume">50%</span>
+            </div>
+            <div class="set-row">
+              <span class="set-label">护眼模式</span>
+              <label class="switch">
+                <input type="checkbox" id="toggle-eyecare" />
+                <span class="switch-track"></span>
+              </label>
+            </div>
+            <div class="set-row">
+              <span class="set-label">护眼强度</span>
+              <input type="range" id="slider-eyecare" min="10" max="70" value="35" />
+              <span class="set-val" id="val-eyecare">35%</span>
+            </div>
+          </section>
+        </div>
       </main>
 
       <footer class="statusbar">
@@ -174,9 +180,17 @@
     </div>
     <svg width="0" height="0" style="position:absolute">
       <defs>
-        <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00ffff" />
-          <stop offset="100%" stop-color="#9b59b6" />
+        <linearGradient id="ring-cpu-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#00e5ff" />
+          <stop offset="100%" stop-color="#a371f7" />
+        </linearGradient>
+        <linearGradient id="ring-mem-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#a371f7" />
+          <stop offset="100%" stop-color="#4a9eff" />
+        </linearGradient>
+        <linearGradient id="ring-disk-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff9800" />
+          <stop offset="100%" stop-color="#2ecc71" />
         </linearGradient>
       </defs>
     </svg>
