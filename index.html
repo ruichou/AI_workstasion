@@ -24,6 +24,7 @@
       <main class="grid">
         <!-- 行 1：时间+天气 -->
         <section class="card clock-card">
+          <button id="btn-city" class="city-gear" title="设置城市">⚙</button>
           <div class="time-row">
             <span id="clock-time" class="clock-time">--:--</span>
             <span id="clock-sec" class="clock-sec">--</span>
@@ -240,6 +241,25 @@
         <div class="picker-foot">
           <button id="picker-browse" class="text-btn">浏览文件…</button>
           <span class="picker-info">点击添加 · 再次点击移除</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="city-picker" class="app-picker hidden">
+      <div class="picker-box">
+        <div class="picker-head">
+          <span class="picker-title">设置城市</span>
+          <input id="city-search" class="picker-search" placeholder="搜索城市/区/镇…" />
+          <button id="city-close" class="picker-close">✕</button>
+        </div>
+        <div id="city-list" class="city-list"></div>
+        <div class="picker-foot">
+          <div class="city-custom">
+            <input id="city-name" class="picker-search city-name-input" placeholder="自定义名称" />
+            <input id="city-lat" class="picker-search city-lat-input" placeholder="纬度" type="number" step="0.0001" />
+            <input id="city-lon" class="picker-search city-lon-input" placeholder="经度" type="number" step="0.0001" />
+            <button id="city-save" class="text-btn">保存</button>
+          </div>
         </div>
       </div>
     </div>

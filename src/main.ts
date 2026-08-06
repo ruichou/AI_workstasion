@@ -1055,6 +1055,100 @@ function initUptime() {
   }
 }
 
+// ---------- 城市设置 ----------
+const CITIES: { name: string; lat: number; lon: number }[] = [
+  { name: "常州市·武进区·湖塘镇", lat: 31.7332, lon: 119.9649 },
+  { name: "常州市·武进区", lat: 31.7, lon: 119.94 },
+  { name: "常州市·天宁区", lat: 31.76, lon: 119.97 },
+  { name: "常州市·钟楼区", lat: 31.78, lon: 119.9 },
+  { name: "常州市·新北区", lat: 31.83, lon: 119.97 },
+  { name: "常州市·金坛区", lat: 31.74, lon: 119.56 },
+  { name: "常州市·溧阳市", lat: 31.42, lon: 119.48 },
+  { name: "常州市·经开区", lat: 31.69, lon: 119.99 },
+  { name: "苏州市·姑苏区", lat: 31.31, lon: 120.62 },
+  { name: "苏州市·工业园区", lat: 31.32, lon: 120.71 },
+  { name: "苏州市·吴中区", lat: 31.27, lon: 120.63 },
+  { name: "南京市·鼓楼区", lat: 32.07, lon: 118.77 },
+  { name: "南京市·玄武区", lat: 32.05, lon: 118.8 },
+  { name: "上海市·浦东新区", lat: 31.23, lon: 121.54 },
+  { name: "上海市·静安区", lat: 31.23, lon: 121.45 },
+  { name: "北京市·朝阳区·望京", lat: 40.0, lon: 116.47 },
+  { name: "北京市·海淀区", lat: 39.96, lon: 116.3 },
+  { name: "北京市·昌平区·回龙观", lat: 41.09, lon: 116.34 },
+  { name: "杭州市·西湖区", lat: 30.26, lon: 120.13 },
+  { name: "杭州市·余杭区", lat: 30.42, lon: 119.98 },
+  { name: "广州市·天河区", lat: 23.13, lon: 113.36 },
+  { name: "深圳市·南山区", lat: 22.53, lon: 113.93 },
+  { name: "深圳市·宝安区", lat: 22.55, lon: 113.88 },
+  { name: "成都市·高新区", lat: 30.58, lon: 104.07 },
+  { name: "武汉市·洪山区", lat: 30.5, lon: 114.34 },
+  { name: "西安市·雁塔区", lat: 34.22, lon: 108.95 },
+  { name: "重庆市·渝北区", lat: 29.6, lon: 106.55 },
+];
+
+function renderCityList(filter: string) {
+  const list = $("city-list");
+  const kw = filter.trim().toLowerCase();
+  const items = CITIES.filter((c) => !kw || c.name.toLowerCase().includes(kw));
+  if (!items.length) {
+    list.innerHTML = `<div class="picker-empty">没有找到匹配的地区</div>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const c of items) {
+    const el = document.createElement("div");
+    el.className = "picker-item";
+    el.innerHTML = `<span class="picker-ico">📍</span><span class="picker-name">${c.name}</span><span class="picker-state">选择</span>`;
+    el.addEventListener("click", () => {
+      void (async () => {
+        const cfg = await getConfig();
+        cfg.city = c.name;
+        cfg.lat = c.lat;
+        cfg.lon = c.lon;
+        await invoke("save_config", { cfg }).catch((e) => alert(e));
+        refreshWeather();
+        toast(`已切换到 ${c.name}`);
+        $("city-picker").classList.add("hidden");
+      })();
+    });
+    list.appendChild(el);
+  }
+}
+
+function initCityPicker() {
+  $("btn-city").addEventListener("click", () => {
+    $("city-picker").classList.remove("hidden");
+    ($("city-search") as HTMLInputElement).value = "";
+    renderCityList("");
+  });
+  $("city-close").addEventListener("click", () => $("city-picker").classList.add("hidden"));
+  ($("city-search") as HTMLInputElement).addEventListener("input", (e) =>
+    renderCityList((e.target as HTMLInputElement).value),
+  );
+  $("city-picker").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("city-picker").classList.add("hidden");
+  });
+  $("city-save").addEventListener("click", () => {
+    void (async () => {
+      const name = ($("city-name") as HTMLInputElement).value.trim();
+      const lat = Number(($("city-lat") as HTMLInputElement).value);
+      const lon = Number(($("city-lon") as HTMLInputElement).value);
+      if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+        toast("请填写完整：名称 + 纬度 + 经度");
+        return;
+      }
+      const cfg = await getConfig();
+      cfg.city = name;
+      cfg.lat = lat;
+      cfg.lon = lon;
+      await invoke("save_config", { cfg }).catch((e) => alert(e));
+      refreshWeather();
+      toast(`已切换到 ${name}`);
+      $("city-picker").classList.add("hidden");
+    })();
+  });
+}
+
 // ---------- 缩服 ----------
 let collapsed = false;
 
@@ -1228,6 +1322,7 @@ function init() {
   initNotes();
   initTheme();
   initUptime();
+  initCityPicker();
   loadOffTime();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
