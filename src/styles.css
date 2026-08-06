@@ -152,7 +152,7 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 3.15fr) minmax(0, 4.7fr) minmax(0, 2.4fr) minmax(0, 3.8fr);
-  grid-template-rows: minmax(120px, 5fr) minmax(140px, 7fr) minmax(130px, 3fr);
+  grid-template-rows: minmax(120px, 5fr) minmax(140px, 7fr) 64px;
   gap: 10px;
   min-height: 0;
 }
@@ -180,6 +180,8 @@ body {
 .launch-card {
   grid-row: 3;
   grid-column: 1 / -1;
+  justify-content: center;
+  gap: 2px;
 }
 
 .ai-card {
@@ -865,34 +867,41 @@ body {
 }
 
 .launch-card .apps-grid {
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-  grid-template-rows: 1fr;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 30px;
+  padding-left: 2px;
+  flex: none;
+  min-height: auto;
 }
 
 .launch-card .app-ico {
-  width: clamp(24px, 2.8vw, 42px);
-  height: clamp(24px, 2.8vw, 42px);
-  font-size: clamp(13px, 1.5vw, 20px);
-  border-radius: clamp(8px, 0.8vw, 12px);
+  width: clamp(20px, 2.4vw, 34px);
+  height: clamp(20px, 2.4vw, 34px);
+  font-size: clamp(11px, 1.3vw, 17px);
+  border-radius: clamp(6px, 0.6vw, 9px);
   box-shadow: none;
 }
 
 .launch-card .app-name {
-  font-size: clamp(7.5px, 0.6vw, 10px);
-  line-height: 1.2;
+  font-size: clamp(7px, 0.55vw, 9.5px);
+  line-height: 1.15;
 }
 
 .launch-card .app-tile {
-  gap: 2px;
+  gap: 1px;
+  flex-direction: row;
+}
+
+.launch-card .app-del {
+  top: -4px;
+  right: -4px;
 }
 
 .launch-card .tabs {
-  margin-bottom: 4px;
-}
-
-.launch-card .tab {
-  font-size: 12px;
-  padding: 2px 2px 3px;
+  margin-bottom: 0;
+  gap: 14px;
 }
 
 .app-tile {

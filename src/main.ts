@@ -956,7 +956,7 @@ function initCollapse() {
   $("btn-collapse").addEventListener("click", () => {
     collapsed = !collapsed;
     document.body.classList.toggle("collapsed", collapsed);
-    $("btn-collapse").textContent = collapsed ? "展开" : "缩服";
+    $("btn-collapse").textContent = collapsed ? "↗" : "▬";
     $("mini-bar").classList.toggle("hidden", !collapsed);
     if (win) {
       if (collapsed) {
