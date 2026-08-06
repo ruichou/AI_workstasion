@@ -321,30 +321,23 @@ function fmtRemain(days: number): string {
 function updateFestivals() {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const list: { name: string; t: number }[] = [];
-  for (const [m, dd, name] of SOLAR_FEST) {
-    let t = new Date(now.getFullYear(), m - 1, dd).getTime();
-    if (t < today) t = new Date(now.getFullYear() + 1, m - 1, dd).getTime();
-    list.push({ name, t });
-  }
-  for (const [m, dd, name] of LUNAR_FEST) {
-    let t = lunar2solar(now.getFullYear(), m, dd).getTime();
-    if (t < today) t = lunar2solar(now.getFullYear() + 1, m, dd).getTime();
-    list.push({ name, t });
-  }
-  list.sort((a, b) => a.t - b.t);
-  const next3 = list.slice(0, 3);
+  const y = now.getFullYear();
+  const list: { name: string; t: number; range?: string }[] = [];
+  const midAutumn = lunar2solar(y, 8, 15);
+  list.push({ name: "中秋节", t: midAutumn.getTime() });
+  list.push({ name: "国庆节", t: new Date(y, 9, 1).getTime(), range: "10月1日-10月7日" });
+  list.push({ name: "元旦", t: new Date(y, 0, 1).getTime() });
   const el = $("cal-fest");
-  if (next3.length) {
-    el.innerHTML = next3
-      .map((x) => {
-        const days = Math.round((x.t - today) / 86400000);
-        return days === 0 ? `<b>🎉 ${x.name} 今天</b>` : `${x.name} ${fmtRemain(days)}`;
-      })
-      .join("<br>");
-  } else {
-    el.textContent = "";
-  }
+  el.innerHTML = list
+    .map((x) => {
+      const d = new Date(x.t);
+      const days = Math.round((x.t - today) / 86400000);
+      const dot = x.name === "元旦" ? "fest-dot green" : "fest-dot";
+      const when = days >= 0 ? `（还有 ${days} 天）` : "（已过）";
+      const dateStr = x.range ?? `${d.getMonth() + 1}月${d.getDate()}日`;
+      return `<span class="${dot}"></span>${x.name} ${dateStr} ${when}`;
+    })
+    .join("<br>");
 }
 
 function renderCalendar() {
@@ -495,15 +488,6 @@ function addTodoInput() {
 }
 
 // ---------- 快捷启动 ----------
-const FOLDERS: { name: string; shell: string; emoji: string }[] = [
-  { name: "桌面", shell: "shell:Desktop", emoji: "🖥" },
-  { name: "文档", shell: "shell:Personal", emoji: "📄" },
-  { name: "下载", shell: "shell:Downloads", emoji: "⬇️" },
-  { name: "图片", shell: "shell:My Pictures", emoji: "🖼" },
-  { name: "音乐", shell: "shell:My Music", emoji: "🎵" },
-  { name: "视频", shell: "shell:My Video", emoji: "🎬" },
-];
-
 const TOOLS: { id: string; name: string; emoji: string }[] = [
   { id: "explorer", name: "文件管理器", emoji: "🗂" },
   { id: "notepad", name: "记事本", emoji: "📝" },
@@ -706,19 +690,6 @@ async function refreshApps() {
     localStorage.setItem("picker-shown", "1");
     openPicker();
   }
-
-  const foldersGrid = $("folders-grid");
-  foldersGrid.innerHTML = "";
-  for (const f of FOLDERS) {
-    foldersGrid.appendChild(
-      tile(f.name, f.emoji, () => {
-        invoke("launch_app", { path: "explorer.exe", args: f.shell }).catch((e) => alert(e));
-      }),
-    );
-  }
-  foldersGrid.appendChild(
-    tile("添加", "+", () => invoke("open_config").catch((e) => alert(e)), "add"),
-  );
 }
 
 function renderTools() {
@@ -803,7 +774,7 @@ function initSettings() {
   });
 
   let configOpened = false;
-  $("btn-settings").addEventListener("click", () => {
+  $("btn-config").addEventListener("click", () => {
     invoke("open_config").catch((e) => alert(e));
     configOpened = true;
   });
@@ -831,6 +802,12 @@ function initSettings() {
     $("btn-pin").style.opacity = "0.4";
   }
   $("btn-min").addEventListener("click", () => win?.minimize());
+  $("btn-max").addEventListener("click", () => {
+    if (!win) return;
+    win.isMaximized()
+      .then((m) => (m ? win!.unmaximize() : win!.maximize()))
+      .catch(() => {});
+  });
   $("btn-close").addEventListener("click", () => {
     invoke("restore_eye_care")
       .catch(() => {})
@@ -948,6 +925,134 @@ function updateOffWork() {
   const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
   const ss = String(diff % 60).padStart(2, "0");
   el.textContent = `⏰ 距下班 ${hh}:${mm}:${ss}`;
+}
+
+// ---------- 便签 ----------
+interface Note {
+  title: string;
+  content: string;
+  date: string;
+}
+
+const NOTES_KEY = "notes";
+
+function loadNotes(): Note[] {
+  const defaults: Note[] = [
+    { title: "今天的灵感", content: "优化工作台布局的细节，提升效率与美观并存。", date: "今天 09:45" },
+    { title: "项目需求", content: "回帆 MVP 版本功能梳理", date: "8月5日" },
+    { title: "服务器备份", content: "每周五自动备份数据", date: "8月1日" },
+  ];
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length) return arr;
+    }
+  } catch {
+    /* ignore */
+  }
+  localStorage.setItem(NOTES_KEY, JSON.stringify(defaults));
+  return defaults;
+}
+
+function saveNotes(notes: Note[]) {
+  localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+}
+
+function renderNotes(showAll = false) {
+  const notes = loadNotes();
+  const list = $("notes-list");
+  list.innerHTML = "";
+  const items = showAll ? notes : notes.slice(0, 3);
+  for (const n of items) {
+    const el = document.createElement("div");
+    el.className = "note-item";
+    const head = document.createElement("div");
+    head.className = "note-head";
+    const title = document.createElement("span");
+    title.className = "note-title";
+    title.textContent = n.title;
+    const date = document.createElement("span");
+    date.className = "note-date";
+    date.textContent = n.date;
+    head.append(title, date);
+    const body = document.createElement("div");
+    body.className = "note-body";
+    body.textContent = n.content;
+    el.append(head, body);
+    list.appendChild(el);
+  }
+  if (!notes.length) {
+    list.innerHTML = `<div class="note-empty">暂无便签，点击「+ 新建」添加</div>`;
+  }
+}
+
+function addNote() {
+  const title = prompt("便签标题：");
+  if (!title) return;
+  const content = prompt("便签内容：") ?? "";
+  const now = new Date();
+  const date = `${now.getMonth() + 1}月${now.getDate()}日 ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const notes = loadNotes();
+  notes.unshift({ title, content, date });
+  saveNotes(notes);
+  renderNotes();
+}
+
+function initNotes() {
+  renderNotes();
+  $("btn-note-add").addEventListener("click", addNote);
+  $("notes-all").addEventListener("click", () => {
+    const notes = loadNotes();
+    if (notes.length > 3) {
+      renderNotes(true);
+      $("notes-all").textContent = "收起 ↑";
+    } else {
+      renderNotes();
+      $("notes-all").textContent = "查看全部便签 →";
+    }
+  });
+}
+
+// ---------- 主题切换 ----------
+function applyTheme(theme: string) {
+  document.body.classList.remove("theme-light", "theme-dark", "theme-system");
+  document.body.classList.add(`theme-${theme}`);
+  localStorage.setItem("theme", theme);
+  const btns = document.querySelectorAll<HTMLButtonElement>(".theme-btn");
+  btns.forEach((b) => b.classList.toggle("active", b.dataset.theme === theme));
+}
+
+function initTheme() {
+  const saved = localStorage.getItem("theme") || "dark";
+  applyTheme(saved);
+  document.querySelectorAll<HTMLButtonElement>(".theme-btn").forEach((b) => {
+    b.addEventListener("click", () => applyTheme(b.dataset.theme || "dark"));
+  });
+}
+
+// ---------- 运行时长 ----------
+const APP_START = Date.now();
+
+function updateUptime() {
+  const el = $("uptime");
+  if (!el) return;
+  const diff = Math.floor((Date.now() - APP_START) / 1000);
+  const hh = String(Math.floor(diff / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
+  const ss = String(diff % 60).padStart(2, "0");
+  el.textContent = `⏱ 已运行 ${hh}:${mm}:${ss}`;
+}
+
+function initUptime() {
+  updateUptime();
+  setInterval(updateUptime, 1000);
+  const check = $("btn-check-update");
+  if (check) {
+    check.addEventListener("click", () => {
+      toast("已是最新版本 v1.0.0");
+    });
+  }
 }
 
 // ---------- 缩服 ----------
@@ -1118,9 +1223,11 @@ function init() {
   initCollapse();
   initAi();
   initWindow();
-  initParticles();
   initPicker();
   initHabits();
+  initNotes();
+  initTheme();
+  initUptime();
   loadOffTime();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
@@ -1145,18 +1252,6 @@ function init() {
     renderCalendar();
   });
   $("btn-todo-add").addEventListener("click", addTodoInput);
-  $("tab-apps").addEventListener("click", () => {
-    $("tab-apps").classList.add("active");
-    $("tab-folders").classList.remove("active");
-    $("apps-grid").classList.remove("hidden");
-    $("folders-grid").classList.add("hidden");
-  });
-  $("tab-folders").addEventListener("click", () => {
-    $("tab-folders").classList.add("active");
-    $("tab-apps").classList.remove("active");
-    $("folders-grid").classList.remove("hidden");
-    $("apps-grid").classList.add("hidden");
-  });
 }
 
 init();

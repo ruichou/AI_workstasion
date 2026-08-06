@@ -1,16 +1,76 @@
 :root {
   --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-hi: rgba(255, 255, 255, 0.12);
-  --text: #f2f4f8;
-  --text-2: #b8bcc9;
-  --text-muted: rgba(230, 232, 240, 0.55);
-  --accent: #4a9eff;
-  --accent-2: #9b59b6;
-  --green: #2ecc71;
-  --orange: #ff9800;
-  --red: #e74c3c;
+  --glass-border: rgba(42, 37, 69, 0.8);
+  --glass-hi: rgba(255, 255, 255, 0.1);
+  --text: #ffffff;
+  --text-2: #c4c0d8;
+  --text-muted: rgba(200, 196, 220, 0.55);
+  --accent: #3b82f6;
+  --accent-2: #8b5cf6;
+  --green: #22c55e;
+  --orange: #f59e0b;
+  --red: #ef4444;
   --bg-a: 1;
+  --card-bg: rgba(26, 22, 48, 0.74);
+  --card-border: rgba(42, 37, 69, 0.5);
+  --app-bg-1: rgba(10, 8, 22, var(--bg-a));
+  --app-bg-2: rgba(21, 17, 42, var(--bg-a));
+  --app-bg-3: rgba(7, 6, 16, var(--bg-a));
+  --ring-track: rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(255, 255, 255, 0.07);
+  --check-done: #3b82f6;
+  --check-todo: rgba(255, 255, 255, 0.3);
+  --scroll-thumb: rgba(255, 255, 255, 0.18);
+}
+
+body.theme-light {
+  --glass-bg: rgba(0, 0, 0, 0.04);
+  --glass-border: rgba(40, 40, 70, 0.18);
+  --glass-hi: rgba(0, 0, 0, 0.07);
+  --text: #1a1a2e;
+  --text-2: #4a4a66;
+  --text-muted: rgba(40, 40, 70, 0.55);
+  --accent: #2563eb;
+  --accent-2: #7c3aed;
+  --green: #16a34a;
+  --orange: #d97706;
+  --red: #dc2626;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-border: rgba(40, 40, 70, 0.12);
+  --app-bg-1: rgba(238, 237, 246, var(--bg-a));
+  --app-bg-2: rgba(230, 228, 242, var(--bg-a));
+  --app-bg-3: rgba(245, 244, 250, var(--bg-a));
+  --ring-track: rgba(0, 0, 0, 0.08);
+  --input-bg: rgba(0, 0, 0, 0.05);
+  --check-done: #2563eb;
+  --check-todo: rgba(0, 0, 0, 0.25);
+  --scroll-thumb: rgba(0, 0, 0, 0.2);
+}
+
+@media (prefers-color-scheme: light) {
+  body.theme-system {
+    --glass-bg: rgba(0, 0, 0, 0.04);
+    --glass-border: rgba(40, 40, 70, 0.18);
+    --glass-hi: rgba(0, 0, 0, 0.07);
+    --text: #1a1a2e;
+    --text-2: #4a4a66;
+    --text-muted: rgba(40, 40, 70, 0.55);
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --green: #16a34a;
+    --orange: #d97706;
+    --red: #dc2626;
+    --card-bg: rgba(255, 255, 255, 0.85);
+    --card-border: rgba(40, 40, 70, 0.12);
+    --app-bg-1: rgba(238, 237, 246, var(--bg-a));
+    --app-bg-2: rgba(230, 228, 242, var(--bg-a));
+    --app-bg-3: rgba(245, 244, 250, var(--bg-a));
+    --ring-track: rgba(0, 0, 0, 0.08);
+    --input-bg: rgba(0, 0, 0, 0.05);
+    --check-done: #2563eb;
+    --check-todo: rgba(0, 0, 0, 0.25);
+    --scroll-thumb: rgba(0, 0, 0, 0.2);
+  }
 }
 
 * {
@@ -36,12 +96,11 @@ body {
   flex-direction: column;
   padding: 10px 14px 8px;
   overflow: hidden;
-  background: radial-gradient(45% 60% at 12% 6%, rgba(100, 140, 255, calc(0.75 * var(--bg-a))), transparent 60%),
-    radial-gradient(38% 52% at 88% 12%, rgba(210, 100, 255, calc(0.85 * var(--bg-a))), transparent 62%),
-    radial-gradient(30% 45% at 62% 22%, rgba(255, 120, 200, calc(0.45 * var(--bg-a))), transparent 65%),
-    radial-gradient(50% 65% at 78% 90%, rgba(255, 140, 80, calc(0.6 * var(--bg-a))), transparent 60%),
-    radial-gradient(45% 60% at 18% 92%, rgba(70, 240, 210, calc(0.65 * var(--bg-a))), transparent 60%),
-    linear-gradient(165deg, rgba(16, 20, 34, var(--bg-a)) 0%, rgba(30, 26, 56, var(--bg-a)) 55%, rgba(12, 14, 26, var(--bg-a)) 100%);
+  background: radial-gradient(45% 60% at 12% 6%, rgba(139, 92, 246, calc(0.3 * var(--bg-a))), transparent 60%),
+    radial-gradient(40% 55% at 88% 12%, rgba(34, 211, 238, calc(0.18 * var(--bg-a))), transparent 62%),
+    radial-gradient(50% 65% at 78% 90%, rgba(236, 72, 153, calc(0.18 * var(--bg-a))), transparent 60%),
+    radial-gradient(45% 60% at 18% 92%, rgba(139, 92, 246, calc(0.24 * var(--bg-a))), transparent 60%),
+    linear-gradient(165deg, var(--app-bg-1) 0%, var(--app-bg-2) 55%, var(--app-bg-3) 100%);
   border-radius: 24px;
 }
 
@@ -78,6 +137,7 @@ body {
   height: 100%;
   pointer-events: none;
   border-radius: 24px;
+  display: none;
 }
 
 .topbar {
@@ -151,52 +211,68 @@ body {
 .grid {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 3.15fr) minmax(0, 4.7fr) minmax(0, 2.4fr) minmax(0, 3.8fr);
-  grid-template-rows: minmax(120px, 5fr) minmax(140px, 7fr) 124px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 2.3fr) minmax(0, 2.3fr) minmax(0, 2.6fr) minmax(0, 2.85fr);
+  grid-template-rows: minmax(180px, 5fr) minmax(150px, 5fr);
+  gap: 15px;
   min-height: 0;
 }
 
 .right-col {
-  grid-row: 2;
-  grid-column: 4;
+  grid-row: auto;
+  grid-column: auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 15px;
   min-width: 0;
   min-height: 0;
 }
 
 .right-col .utils-card {
-  flex: 1;
+  flex: 1.8;
 }
 
 .right-col .settings-card {
-  flex: 1.2;
+  flex: 1;
   justify-content: space-evenly;
   overflow-y: auto;
 }
 
-.launch-card {
-  grid-row: 3;
-  grid-column: 1 / -1;
-  justify-content: center;
-  gap: 2px;
-}
-
-.ai-card {
+.row2 {
   grid-row: 2;
-  grid-column: 3;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.26fr) minmax(0, 1fr) minmax(0, 2.16fr);
+  gap: 15px;
+  min-width: 0;
+  min-height: 0;
 }
 
-.ai-hint {
-  font-size: clamp(9px, 0.7vw, 11px);
+.workspace-card {
+  grid-row: auto;
+  grid-column: auto;
+}
+
+.notes-card {
+  grid-row: auto;
+  grid-column: auto;
+}
+
+.ws-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  min-height: 0;
+  border: 1.5px dashed var(--card-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.ws-hint {
+  font-size: clamp(10.5px, 0.8vw, 12.5px);
   color: var(--text-muted);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  padding: 2px 8px;
-  border-radius: 8px;
-  flex-shrink: 0;
+  text-align: center;
 }
 
 .ai-model {
@@ -277,11 +353,11 @@ body {
 }
 
 .card {
-  background: rgba(22, 27, 34, 0.62);
-  border: 1px solid rgba(48, 54, 61, 0.6);
-  border-radius: 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
   padding: clamp(6px, 0.8vh, 12px) clamp(8px, 0.8vw, 14px);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -721,6 +797,123 @@ body {
   color: var(--text);
 }
 
+/* ---------- 便签 ---------- */
+.notes-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.note-item {
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 7px;
+}
+
+.note-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.note-title {
+  font-size: clamp(11px, 0.85vw, 13.5px);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.note-date {
+  font-size: clamp(9px, 0.7vw, 11px);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.note-body {
+  font-size: clamp(10px, 0.75vw, 12px);
+  color: var(--text-2);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.note-empty {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 30px 0;
+}
+
+.notes-all {
+  flex-shrink: 0;
+  text-align: center;
+  font-size: clamp(10px, 0.75vw, 12px);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 6px 0 2px;
+}
+
+.notes-all:hover {
+  text-decoration: underline;
+}
+
+/* ---------- 主题切换 ---------- */
+.theme-switch {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+.theme-btn {
+  border: 1px solid var(--card-border);
+  background: var(--glass-bg);
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: clamp(10px, 0.75vw, 12px);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.theme-btn:hover {
+  color: var(--text);
+}
+
+.theme-btn.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* ---------- 节假日圆点 ---------- */
+.fest-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--orange);
+  margin-right: 6px;
+}
+
+.fest-dot.green {
+  background: var(--green);
+}
+
+/* ---------- 状态栏扩展 ---------- */
+.check-update {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.set-actions {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 .todo-list {
   flex: 1;
   overflow-y: auto;
@@ -746,7 +939,7 @@ body {
 .todo-check {
   width: 17px;
   height: 17px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  border: 2px solid var(--check-todo);
   border-radius: 5px;
   cursor: pointer;
   flex-shrink: 0;
@@ -760,13 +953,12 @@ body {
 }
 
 .todo-item.done .todo-check {
-  background: var(--green);
-  border-color: var(--green);
-  color: #0b1020;
+  background: var(--check-done);
+  border-color: var(--check-done);
+  color: #fff;
 }
 
 .todo-item.done .todo-text {
-  text-decoration: line-through;
   color: var(--text-muted);
 }
 
@@ -897,26 +1089,45 @@ body {
   min-height: 0;
 }
 
+.launch-card {
+  flex-shrink: 0;
+  height: 80px;
+  flex-direction: row;
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  border-radius: 16px;
+  padding-left: 16px;
+}
+
+.launch-title {
+  font-size: clamp(11px, 0.85vw, 14px);
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .launch-card .apps-grid {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 20px 30px;
-  padding-left: 2px;
+  justify-content: flex-start;
+  gap: 14px 30px;
   flex: none;
   min-height: auto;
 }
 
 .launch-card .app-ico {
-  width: clamp(24px, 2.8vw, 42px);
-  height: clamp(24px, 2.8vw, 42px);
+  width: clamp(26px, 2.8vw, 42px);
+  height: clamp(26px, 2.8vw, 42px);
   font-size: clamp(12px, 1.4vw, 20px);
-  border-radius: clamp(7px, 0.7vw, 11px);
+  border-radius: clamp(8px, 0.8vw, 12px);
   box-shadow: none;
 }
 
 .launch-card .app-name {
-  font-size: clamp(7.5px, 0.6vw, 10px);
+  font-size: clamp(8px, 0.6vw, 10.5px);
   line-height: 1.2;
 }
 
@@ -927,11 +1138,6 @@ body {
 .launch-card .app-del {
   top: -4px;
   right: -4px;
-}
-
-.launch-card .tabs {
-  margin-bottom: 2px;
-  gap: 14px;
 }
 
 .app-ico-img {
@@ -1485,6 +1691,8 @@ body {
 
   .launch-card,
   .ai-card,
+  .workspace-card,
+  .notes-card,
   .right-col {
     grid-row: auto;
     grid-column: auto;
@@ -1523,6 +1731,15 @@ body {
 
   .launch-card {
     min-height: 168px;
+    margin-top: 0;
+  }
+
+  .workspace-card {
+    min-height: 150px;
+  }
+
+  .notes-card {
+    min-height: 190px;
   }
 
   .ai-card {

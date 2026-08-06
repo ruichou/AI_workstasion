@@ -14,10 +14,9 @@
           <span class="brand-name">工作台</span>
         </div>
         <div class="win-controls">
-          <button id="btn-settings" class="wc-btn" title="设置">⚙</button>
-          <button id="btn-collapse" class="wc-btn" title="缩服/展开">▬</button>
           <button id="btn-pin" class="wc-btn" title="置顶切换">📌</button>
           <button id="btn-min" class="wc-btn" title="最小化">─</button>
+          <button id="btn-max" class="wc-btn" title="最大化">□</button>
           <button id="btn-close" class="wc-btn wc-close" title="退出">✕</button>
         </div>
       </header>
@@ -121,20 +120,11 @@
           </div>
         </section>
 
-        <!-- 行 3：快捷启动横条 -->
-        <section class="card launch-card">
-          <div class="tabs">
-            <button id="tab-apps" class="tab active">应用程序</button>
-            <button id="tab-folders" class="tab">文件夹</button>
-          </div>
-          <div id="apps-grid" class="apps-grid"></div>
-          <div id="folders-grid" class="apps-grid hidden"></div>
-        </section>
-
-        <!-- 行 2：AI 对话 -->
-        <section class="card ai-card">
+        <!-- 行 2：自定义工作区 + 快捷工具/设置 + 便签 -->
+        <div class="row2">
+        <section class="card workspace-card">
           <div class="card-head">
-            <span class="card-title">AI 对话</span>
+            <span class="card-title">自定义工作区</span>
             <select id="ai-model" class="ai-model">
               <option value="千问">千问</option>
               <option value="豆包">豆包</option>
@@ -143,26 +133,30 @@
               <option value="DeepSeek">DeepSeek</option>
             </select>
           </div>
-          <div class="ai-wrap">
-            <textarea id="ai-input" class="ai-input" placeholder="输入问题，回车或点击发送，将用夸克浏览器提问千问…" spellcheck="false"></textarea>
-            <button id="ai-send" class="ai-send">问千问</button>
-          </div>
-          <div class="ai-tips">
-            <span>可直接问：代码 / 文案 / 翻译 / 学习…</span>
+          <div class="ws-body">
+            <div class="ws-hint">拖拽常用组件到此处，打造你的专属工作区</div>
+            <div class="ai-wrap">
+              <textarea id="ai-input" class="ai-input" placeholder="输入问题，回车或点击发送，将用夸克浏览器提问…" spellcheck="false"></textarea>
+              <button id="ai-send" class="ai-send">问 AI</button>
+            </div>
           </div>
         </section>
 
-        <!-- 行 2 右列：实用工具 + 系统设置 -->
+        <!-- 行 2 中列：快捷工具 + 系统设置 -->
         <div class="right-col">
           <section class="card utils-card">
             <div class="card-head">
-              <span class="card-title">实用工具</span>
+              <span class="card-title">快捷工具</span>
             </div>
             <div id="tools-grid" class="tools-grid"></div>
           </section>
           <section class="card settings-card">
             <div class="card-head">
               <span class="card-title">系统设置</span>
+              <div class="set-actions">
+                <button id="btn-config" class="wc-btn" title="打开配置文件">⚙</button>
+                <button id="btn-collapse" class="wc-btn" title="缩服/展开">▬</button>
+              </div>
             </div>
             <div class="set-row">
               <span class="set-label">透明度</span>
@@ -188,7 +182,29 @@
             </div>
           </section>
         </div>
+
+        <!-- 行 2：便签 -->
+        <section class="card notes-card">
+          <div class="card-head">
+            <span class="card-title">便签</span>
+            <button id="btn-note-add" class="text-btn">+ 新建</button>
+          </div>
+          <div id="notes-list" class="notes-list"></div>
+          <div class="notes-all">查看全部便签 →</div>
+          <div class="theme-switch">
+            <button class="theme-btn" data-theme="light">浅色</button>
+            <button class="theme-btn active" data-theme="dark">深色</button>
+            <button class="theme-btn" data-theme="system">跟随系统</button>
+          </div>
+        </section>
+        </div>
       </main>
+
+      <!-- 快速启动栏 -->
+      <section class="card launch-card">
+        <span class="launch-title">快速启动</span>
+        <div id="apps-grid" class="apps-grid"></div>
+      </section>
 
       <footer class="statusbar">
         <span class="status-dot"></span>
@@ -197,6 +213,9 @@
         <span>版本: v1.0.0</span>
         <span class="sep">|</span>
         <span id="off-work">⏰ 距下班 --:--:--</span>
+        <span class="sep">|</span>
+        <span id="uptime">⏱ 已运行 --:--:--</span>
+        <button id="btn-check-update" class="text-btn check-update">↑ 检查更新</button>
       </footer>
 
       <div id="mini-bar" class="mini-bar hidden" data-tauri-drag-region>
@@ -226,16 +245,16 @@
     <svg width="0" height="0" style="position:absolute">
       <defs>
         <linearGradient id="ring-cpu-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#00e5ff" />
-          <stop offset="100%" stop-color="#a371f7" />
+          <stop offset="0%" stop-color="#8b5cf6" />
+          <stop offset="100%" stop-color="#3b82f6" />
         </linearGradient>
         <linearGradient id="ring-mem-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#a371f7" />
-          <stop offset="100%" stop-color="#4a9eff" />
+          <stop offset="0%" stop-color="#22d3ee" />
+          <stop offset="100%" stop-color="#3b82f6" />
         </linearGradient>
         <linearGradient id="ring-disk-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#ff9800" />
-          <stop offset="100%" stop-color="#2ecc71" />
+          <stop offset="0%" stop-color="#f97316" />
+          <stop offset="100%" stop-color="#ef4444" />
         </linearGradient>
       </defs>
     </svg>
