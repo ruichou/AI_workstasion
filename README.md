@@ -62,13 +62,23 @@ GlassWorkspace 是一个 **Windows 桌面悬浮工作台**：半透明毛玻璃�
 
 ## 🚀 快速开始
 
-### 方式一：下载安装包（推荐）
+### 方式一：绿色免安装版（最简单，推荐）
 
-前往 [Releases](https://github.com/ruichou/AI_workstasion/releases) 下载最新版安装包：
+前往 [Releases](https://github.com/ruichou/AI_workstasion/releases) 下载：
 
-- `GlassWorkspace_x64-setup.exe`（NSIS 安装版）
+- `GlassWorkspace.exe` —— **免安装**，下载后双击直接运行，无需任何依赖
 
-### 方式二：从源码构建
+或者直接复制粘贴下面这条命令到 **PowerShell** 一键下载并启动：
+
+```powershell
+iwr "https://github.com/ruichou/AI_workstasion/releases/latest/download/GlassWorkspace.exe" -OutFile "$env:TEMP\GlassWorkspace.exe"; & "$env:TEMP\GlassWorkspace.exe"
+```
+
+### 方式二：安装版
+
+- `GlassWorkspace_x64-setup.exe` —— NSIS 安装版，装完有开始菜单快捷方式
+
+### 方式三：从源码构建
 
 > 需要 [Rust](https://www.rust-lang.org/tools/install)（1.97+）与 [Node.js](https://nodejs.org/)（18+）
 
