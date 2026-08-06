@@ -385,6 +385,47 @@ body {
   overflow: hidden;
 }
 
+.habit-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+
+.habit-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 4px 8px;
+  font-size: clamp(10px, 0.75vw, 12px);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+  font-variant-numeric: tabular-nums;
+}
+
+.habit-chip:hover {
+  background: var(--glass-hi);
+  transform: translateY(-1px);
+}
+
+.habit-chip:active {
+  transform: scale(0.96);
+}
+
+.habit-add {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+#off-work {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .w-desc {
   overflow: hidden;
   text-overflow: ellipsis;

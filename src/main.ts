@@ -1,6 +1,6 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, Window as TauriWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -38,6 +38,8 @@ interface Config {
   city: string;
   lat: number | null;
   lon: number | null;
+  ai_url: string;
+  off_time: string;
   apps: AppItem[];
 }
 
@@ -186,6 +188,7 @@ function fmtClock() {
     mini.textContent = `${now.getMonth() + 1}月${now.getDate()}日 周${WEEK_CN[now.getDay()]} · 农历${l.monthCn}${l.dayCn}`;
   }
   updateFestivals();
+  updateOffWork();
 }
 
 // ---------- 天气 ----------
@@ -530,7 +533,7 @@ async function getConfig(): Promise<Config> {
   try {
     return await invoke<Config>("get_config");
   } catch {
-    return { city: "", lat: null, lon: null, apps: [] };
+    return { city: "", lat: null, lon: null, ai_url: "", off_time: "18:00", apps: [] };
   }
 }
 
@@ -717,7 +720,12 @@ function renderTools() {
 
 // ---------- 设置 ----------
 function initSettings() {
-  const win = getCurrentWindow();
+  let win: TauriWindow | null = null;
+  try {
+    win = getCurrentWindow();
+  } catch {
+    /* 非 Tauri 环境 */
+  }
   const sliderOp = $("slider-opacity") as HTMLInputElement;
   const sliderVol = $("slider-volume") as HTMLInputElement;
   const sliderEye = $("slider-eyecare") as HTMLInputElement;
@@ -785,31 +793,33 @@ function initSettings() {
     configOpened = true;
   });
 
-  win.onFocusChanged(({ payload }) => {
-    if (payload && configOpened) {
-      configOpened = false;
-      invoke("reload_config")
-        .then(() => refreshApps())
-        .catch(() => {});
-    }
-  });
+  if (win) {
+    win.onFocusChanged(({ payload }) => {
+      if (payload && configOpened) {
+        configOpened = false;
+        invoke("reload_config")
+          .then(() => refreshApps())
+          .catch(() => {});
+      }
+    });
+  }
 
   $("btn-pin").addEventListener("click", () => {
     const pinned = localStorage.getItem("pinned") !== "0";
     const next = !pinned;
     localStorage.setItem("pinned", next ? "1" : "0");
-    win.setAlwaysOnTop(next);
+    win?.setAlwaysOnTop(next);
     $("btn-pin").style.opacity = next ? "1" : "0.4";
   });
   if (localStorage.getItem("pinned") === "0") {
-    win.setAlwaysOnTop(false);
+    win?.setAlwaysOnTop(false);
     $("btn-pin").style.opacity = "0.4";
   }
-  $("btn-min").addEventListener("click", () => win.minimize());
+  $("btn-min").addEventListener("click", () => win?.minimize());
   $("btn-close").addEventListener("click", () => {
     invoke("restore_eye_care")
       .catch(() => {})
-      .finally(() => win.close());
+      .finally(() => win?.close());
   });
 }
 
@@ -842,6 +852,83 @@ function initAi() {
   });
 }
 
+// ---------- 习惯打卡（喝水/抽烟，每日自动重置） ----------
+const HABIT_KEY = "habits";
+
+function loadHabits(): { date: string; water: number; smoke: number } {
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+  try {
+    const raw = localStorage.getItem(HABIT_KEY);
+    if (raw) {
+      const h = JSON.parse(raw);
+      if (h.date === todayStr) return h;
+    }
+  } catch {
+    /* ignore */
+  }
+  return { date: todayStr, water: 0, smoke: 0 };
+}
+
+function saveHabits(h: { date: string; water: number; smoke: number }) {
+  localStorage.setItem(HABIT_KEY, JSON.stringify(h));
+}
+
+function renderHabits() {
+  const h = loadHabits();
+  $("cnt-water").textContent = String(h.water);
+  $("cnt-smoke").textContent = String(h.smoke);
+}
+
+function initHabits() {
+  renderHabits();
+  const bump = (key: "water" | "smoke") => {
+    const h = loadHabits();
+    h[key] += 1;
+    saveHabits(h);
+    renderHabits();
+  };
+  const reset = (key: "water" | "smoke") => {
+    const h = loadHabits();
+    h[key] = 0;
+    saveHabits(h);
+    renderHabits();
+  };
+  $("btn-water").addEventListener("click", () => bump("water"));
+  $("btn-smoke").addEventListener("click", () => bump("smoke"));
+  $("btn-water").addEventListener("dblclick", () => reset("water"));
+  $("btn-smoke").addEventListener("dblclick", () => reset("smoke"));
+}
+
+// ---------- 下班倒计时 ----------
+let offTime = "18:00";
+
+async function loadOffTime() {
+  try {
+    const cfg = await invoke<Config>("get_config");
+    if (cfg.off_time) offTime = cfg.off_time;
+  } catch {
+    /* ignore */
+  }
+}
+
+function updateOffWork() {
+  const el = $("off-work");
+  if (!el) return;
+  const now = new Date();
+  const [h, m] = offTime.split(":").map((x) => Number(x) || 0);
+  const off = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+  if (now >= off) {
+    el.textContent = "🎉 已下班";
+    return;
+  }
+  const diff = Math.floor((off.getTime() - now.getTime()) / 1000);
+  const hh = String(Math.floor(diff / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, "0");
+  const ss = String(diff % 60).padStart(2, "0");
+  el.textContent = `⏰ 距下班 ${hh}:${mm}:${ss}`;
+}
+
 // ---------- 缩服 ----------
 let collapsed = false;
 
@@ -849,16 +936,23 @@ const MIN_W = 490;
 const MIN_H = 225;
 
 function initCollapse() {
-  const win = getCurrentWindow();
+  let win: TauriWindow | null = null;
+  try {
+    win = getCurrentWindow();
+  } catch {
+    /* 非 Tauri 环境 */
+  }
   $("btn-collapse").addEventListener("click", () => {
     collapsed = !collapsed;
     document.body.classList.toggle("collapsed", collapsed);
     $("btn-collapse").textContent = collapsed ? "展开" : "缩服";
     $("mini-bar").classList.toggle("hidden", !collapsed);
-    if (collapsed) {
-      win.setMinSize(new LogicalSize(360, 110)).catch(() => {});
-    } else {
-      win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
+    if (win) {
+      if (collapsed) {
+        win.setMinSize(new LogicalSize(360, 110)).catch(() => {});
+      } else {
+        win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
+      }
     }
     invoke("set_window_size", { width: collapsed ? 360 : 1600, height: collapsed ? 110 : 900 }).catch(() => {});
   });
@@ -866,9 +960,13 @@ function initCollapse() {
 
 // ---------- 窗口初始化 ----------
 function initWindow() {
-  const win = getCurrentWindow();
-  win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
-  win.setSize(new LogicalSize(1600, 900)).catch(() => {});
+  try {
+    const win = getCurrentWindow();
+    win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
+    win.setSize(new LogicalSize(1600, 900)).catch(() => {});
+  } catch {
+    /* 非 Tauri 环境 */
+  }
 }
 
 // ---------- 粒子背景 ----------
@@ -938,10 +1036,13 @@ function init() {
   initWindow();
   initParticles();
   initPicker();
+  initHabits();
+  loadOffTime();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);
   setInterval(refreshWeather, 5 * 60 * 1000);
+  updateOffWork();
 
   $("cal-prev").addEventListener("click", () => {
     calMonth--;

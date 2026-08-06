@@ -33,6 +33,7 @@ struct Config {
     lat: Option<f64>,
     lon: Option<f64>,
     ai_url: String,
+    off_time: String,
     apps: Vec<AppItem>,
 }
 
@@ -49,6 +50,7 @@ impl Default for Config {
             lat: Some(31.7332),
             lon: Some(119.9649),
             ai_url: String::from("https://www.qianwen.com/"),
+            off_time: String::from("18:00"),
             apps: vec![
                 blank("ChatGPT", "🤖"),
                 blank("OpenCode", "◯"),
