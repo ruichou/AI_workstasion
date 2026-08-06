@@ -1,6 +1,6 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize, Window as TauriWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition, Window as TauriWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -954,16 +954,79 @@ function initCollapse() {
         win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
       }
     }
-    invoke("set_window_size", { width: collapsed ? 360 : 1600, height: collapsed ? 110 : 900 }).catch(() => {});
+    if (collapsed) {
+      invoke("set_window_size", { width: 360, height: 110 }).catch(() => {});
+    } else {
+      let w = DEFAULT_W;
+      let h = DEFAULT_H;
+      try {
+        const s = JSON.parse(localStorage.getItem(WIN_STATE_KEY) || "{}");
+        if (s.w && s.h) {
+          w = s.w;
+          h = s.h;
+        }
+      } catch {
+        /* ignore */
+      }
+      invoke("set_window_size", { width: w, height: h }).catch(() => {});
+    }
   });
 }
 
 // ---------- 窗口初始化 ----------
+const DEFAULT_W = 1200;
+const DEFAULT_H = 760;
+const WIN_STATE_KEY = "win-state";
+
+function saveWinState(patch: Record<string, number>) {
+  if (collapsed) return;
+  let cur: Record<string, number> = {};
+  try {
+    cur = JSON.parse(localStorage.getItem(WIN_STATE_KEY) || "{}");
+  } catch {
+    /* ignore */
+  }
+  Object.assign(cur, patch);
+  localStorage.setItem(WIN_STATE_KEY, JSON.stringify(cur));
+}
+
 function initWindow() {
   try {
     const win = getCurrentWindow();
     win.setMinSize(new LogicalSize(MIN_W, MIN_H)).catch(() => {});
-    win.setSize(new LogicalSize(1600, 900)).catch(() => {});
+    let restored = false;
+    try {
+      const s = JSON.parse(localStorage.getItem(WIN_STATE_KEY) || "null");
+      if (s && Number.isFinite(s.w) && Number.isFinite(s.h)) {
+        const w = Math.min(Math.max(s.w, 400), 4000);
+        const h = Math.min(Math.max(s.h, 200), 2000);
+        win.setSize(new PhysicalSize(w, h)).catch(() => {});
+        if (
+          Number.isFinite(s.x) &&
+          Number.isFinite(s.y) &&
+          s.x > -4000 &&
+          s.x < 8000 &&
+          s.y > -4000 &&
+          s.y < 8000
+        ) {
+          win.setPosition(new PhysicalPosition(s.x, s.y)).catch(() => {});
+        }
+        restored = true;
+      }
+    } catch {
+      /* ignore */
+    }
+    if (!restored) {
+      win.setSize(new LogicalSize(DEFAULT_W, DEFAULT_H)).catch(() => {});
+    }
+    win.onResized(({ payload }) => {
+      if (payload.width < 300 || payload.height < 150) return;
+      saveWinState({ w: payload.width, h: payload.height });
+    });
+    win.onMoved(({ payload }) => {
+      if (payload.x < -4000 || payload.x > 8000 || payload.y < -4000 || payload.y > 8000) return;
+      saveWinState({ x: payload.x, y: payload.y });
+    });
   } catch {
     /* 非 Tauri 环境 */
   }
