@@ -423,8 +423,11 @@ mod audio {
 
     fn with_volume<R>(f: impl FnOnce(&IAudioEndpointVolume) -> Result<R, String>) -> Result<R, String> {
         unsafe {
+            let mut need_uninit = false;
             let hr = CoInitializeEx(None, COINIT(0));
-            if hr.is_err() {
+            if hr.is_ok() {
+                need_uninit = hr.0 == 0;
+            } else if hr.0 as u32 != 0x80010106 {
                 return Err(format!("COM 初始化失败: {hr}"));
             }
             let result = (|| {
@@ -443,7 +446,9 @@ mod audio {
                 };
                 f(&volume)
             })();
-            CoUninitialize();
+            if need_uninit {
+                CoUninitialize();
+            }
             result
         }
     }

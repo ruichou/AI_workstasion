@@ -1322,16 +1322,24 @@ function init() {
   refreshSys();
   refreshTemps();
   refreshWeather();
-  initSettings();
-  initCollapse();
-  initAi();
-  initWindow();
-  initPicker();
-  initHabits();
-  initNotes();
-  initTheme();
-  initUptime();
-  initCityPicker();
+  for (const fn of [
+    initSettings,
+    initCollapse,
+    initAi,
+    initWindow,
+    initPicker,
+    initHabits,
+    initNotes,
+    initTheme,
+    initUptime,
+    initCityPicker,
+  ]) {
+    try {
+      fn();
+    } catch (e) {
+      console.error("init failed:", fn.name, e);
+    }
+  }
   loadOffTime();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
