@@ -35,6 +35,12 @@ GlassWorkspace 是一个 **Windows 桌面悬浮工作台**：半透明毛玻璃�
 
 ---
 
+## 📸 界面预览
+
+![GlassWorkspace](docs/screenshot.png)
+
+---
+
 ## ✨ 功能特性
 
 | 模块 | 能力 |
