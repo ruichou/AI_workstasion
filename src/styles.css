@@ -463,6 +463,10 @@ body {
   border-radius: 12px;
 }
 
+.sys-card {
+  container-type: size;
+}
+
 .sys-rings {
   flex: 1;
   display: inline-grid;
@@ -477,14 +481,36 @@ body {
   justify-content: center;
   margin: auto;
   min-height: 0;
+  max-height: 100%;
 }
 
 .ring-box {
   position: relative;
-  width: clamp(52px, 7vw, 104px);
-  height: clamp(52px, 7vw, 104px);
+  width: clamp(36px, min(7vw, 13vh), 104px);
+  height: clamp(36px, min(7vw, 13vh), 104px);
   aspect-ratio: 1;
   flex-shrink: 0;
+}
+
+@container (max-height: 260px) {
+  .ring-box {
+    width: 76px;
+    height: 76px;
+  }
+}
+
+@container (max-height: 220px) {
+  .ring-box {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+@container (max-height: 180px) {
+  .ring-box {
+    width: 52px;
+    height: 52px;
+  }
 }
 
 .ring-box.ring-cpu {
@@ -1484,7 +1510,7 @@ body {
   }
 
   .sys-card {
-    min-height: 118px;
+    min-height: 152px;
   }
 
   .cal-card {
