@@ -812,6 +812,113 @@ fn scan_apps() -> Vec<AppItem> {
     apps
 }
 
+#[cfg(target_os = "windows")]
+fn extract_icon_png(exe: &str, out: &std::path::Path) -> Result<(), String> {
+    use windows::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetObjectW, SelectObject,
+        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
+    };
+    use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use windows::Win32::UI::Shell::{
+        SHFILEINFOW, SHGetFileInfoW, SHGFI_FLAGS, SHGFI_ICON, SHGFI_LARGEICON,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DestroyIcon, DrawIconEx, GetIconInfo, DI_NORMAL, HICON, ICONINFO,
+    };
+    unsafe {
+        let path: Vec<u16> = exe.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut sfi: SHFILEINFOW = std::mem::zeroed();
+        SHGetFileInfoW(
+            windows::core::PCWSTR(path.as_ptr()),
+            FILE_FLAGS_AND_ATTRIBUTES(0),
+            Some(&mut sfi as *mut _),
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_FLAGS(SHGFI_ICON.0 | SHGFI_LARGEICON.0),
+        );
+        let icon = sfi.hIcon;
+        if icon.is_invalid() {
+            return Err(String::from("无图标"));
+        }
+
+        let mut ii: ICONINFO = std::mem::zeroed();
+        if GetIconInfo(icon, &mut ii).is_ok() {
+            let mut bm: BITMAP = std::mem::zeroed();
+            GetObjectW(
+                HGDIOBJ(ii.hbmColor.0),
+                std::mem::size_of::<BITMAP>() as i32,
+                Some(&mut bm as *mut _ as *mut _),
+            );
+            let (w, h) = (bm.bmWidth.max(1), bm.bmHeight.max(1));
+            let dc = CreateCompatibleDC(None);
+            let mut bi: BITMAPINFO = std::mem::zeroed();
+            bi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+            bi.bmiHeader.biWidth = w;
+            bi.bmiHeader.biHeight = -h;
+            bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32;
+            bi.bmiHeader.biCompression = 0;
+            let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+            let dib = match CreateDIBSection(None, &bi, DIB_RGB_COLORS, &mut bits, None, 0) {
+                Ok(d) => d,
+                Err(e) => {
+                    DeleteDC(dc);
+                    let _ = DeleteObject(HGDIOBJ(ii.hbmColor.0));
+                    let _ = DeleteObject(HGDIOBJ(ii.hbmMask.0));
+                    DestroyIcon(icon);
+                    return Err(format!("创建位图失败: {e}"));
+                }
+            };
+            let old = SelectObject(dc, HGDIOBJ(dib.0));
+            DrawIconEx(dc, 0, 0, icon, w, h, 0, None, DI_NORMAL).ok();
+            SelectObject(dc, old);
+            let len = (w * h * 4) as usize;
+            let src = std::slice::from_raw_parts(bits as *const u8, len);
+            let mut rgba = vec![0u8; len];
+            for i in 0..(w * h) as usize {
+                rgba[i * 4] = src[i * 4 + 2];
+                rgba[i * 4 + 1] = src[i * 4 + 1];
+                rgba[i * 4 + 2] = src[i * 4];
+                rgba[i * 4 + 3] = src[i * 4 + 3];
+            }
+            let file = std::fs::File::create(out).map_err(|e| e.to_string())?;
+            let mut encoder = png::Encoder::new(file, w as u32, h as u32);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+            writer.write_image_data(&rgba).map_err(|e| e.to_string())?;
+            writer.finish().map_err(|e| e.to_string())?;
+            let _ = DeleteObject(HGDIOBJ(dib.0));
+            let _ = DeleteObject(HGDIOBJ(ii.hbmColor.0));
+            let _ = DeleteObject(HGDIOBJ(ii.hbmMask.0));
+            DeleteDC(dc);
+            DestroyIcon(icon);
+            Ok(())
+        } else {
+            DestroyIcon(icon);
+            Err(String::from("读取图标信息失败"))
+        }
+    }
+}
+
+#[tauri::command]
+fn get_app_icon(app: AppHandle, path: String, name: String) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("icons");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+    let png_path = dir.join(format!("{safe}.png"));
+    if !png_path.exists() {
+        extract_icon_png(&path, &png_path).map_err(|e| format!("提取图标失败: {e}"))?;
+    }
+    Ok(png_path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 fn save_config(app: AppHandle, state: State<'_, AppState>, cfg: Config) -> Result<(), String> {
     let path = config_path(&app)?;
@@ -941,7 +1048,8 @@ pub fn run() {
             open_ai_chat,
             save_config,
             scan_apps,
-            restore_eye_care
+            restore_eye_care,
+            get_app_icon
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -1,5 +1,6 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition, Window as TauriWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -671,22 +672,31 @@ async function refreshApps() {
     apps = [];
   }
   for (const app of apps) {
-    appsGrid.appendChild(
-      tile(
-        app.name,
-        app.emoji || "📦",
-        () => {
-          if (!app.path) {
-            alert(`「${app.name}」未配置路径，已打开配置文件，请填写 path 后保存`);
-            invoke("open_config").catch((e) => alert(e));
-            return;
-          }
-          invoke("launch_app", { path: app.path, args: app.args }).catch((e) => alert(e));
-        },
-        "",
-        () => removeApp(app.name),
-      ),
+    const t = tile(
+      app.name,
+      app.emoji || "📦",
+      () => {
+        if (!app.path) {
+          alert(`「${app.name}」未配置路径，已打开配置文件，请填写 path 后保存`);
+          invoke("open_config").catch((e) => alert(e));
+          return;
+        }
+        invoke("launch_app", { path: app.path, args: app.args }).catch((e) => alert(e));
+      },
+      "",
+      () => removeApp(app.name),
     );
+    appsGrid.appendChild(t);
+    if (app.path) {
+      invoke<string>("get_app_icon", { path: app.path, name: app.name })
+        .then((p) => {
+          const ico = t.querySelector(".app-ico") as HTMLElement;
+          if (ico) {
+            ico.innerHTML = `<img class="app-ico-img" src="${convertFileSrc(p)}" draggable="false" alt="" />`;
+          }
+        })
+        .catch(() => {});
+    }
   }
   appsGrid.appendChild(
     tile("添加应用", "+", () => openPicker(), "add"),
