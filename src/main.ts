@@ -1279,6 +1279,7 @@ async function sendAiChat() {
   }
   if (text) content.push({ type: "text", text });
   aiMsgs.push({ role: "user", content });
+  if (aiMsgs.length > 100) aiMsgs.splice(0, aiMsgs.length - 100);
   appendAiMsg("user", content);
   ta.value = "";
   aiAttachments = [];
@@ -2232,19 +2233,45 @@ function initParticles() {
   resize();
   window.addEventListener("resize", resize);
   const COLORS = ["120,170,255", "190,120,255", "255,150,120", "80,230,210", "255,110,220", "255,220,120"];
+  // 预渲染 6 张渐变贴图（每色一张），运行时只 drawImage，零分配
+  const sprites = COLORS.map((c) => {
+    const s = document.createElement("canvas");
+    s.width = 64;
+    s.height = 64;
+    const sc = s.getContext("2d");
+    if (sc) {
+      const g = sc.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, `rgba(${c},1)`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      sc.fillStyle = g;
+      sc.fillRect(0, 0, 64, 64);
+    }
+    return s;
+  });
   const N = Math.max(40, Math.min(100, Math.floor(canvas.clientWidth / 20)));
   const ps = Array.from({ length: N }, () => ({
     x: Math.random(),
     y: Math.random(),
-    r: Math.random() * 4.5 + 1.6,
+    r: Math.random() * 2.2 + 1.2,
     vx: (Math.random() - 0.5) * 0.0003,
     vy: -(Math.random() * 0.0004 + 0.00008),
-    a: Math.random() * 0.45 + 0.55,
-    c: COLORS[Math.floor(Math.random() * COLORS.length)],
+    a: Math.random() * 0.35 + 0.45,
+    c: Math.floor(Math.random() * COLORS.length),
     tw: Math.random() * Math.PI * 2,
   }));
   let t = 0;
-  const tick = () => {
+  let last = 0;
+  const tick = (ts: number) => {
+    if (document.hidden) {
+      last = ts;
+      requestAnimationFrame(tick);
+      return;
+    }
+    if (ts - last < 33) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    last = ts;
     t += 0.016;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (const p of ps) {
@@ -2257,17 +2284,14 @@ function initParticles() {
       if (p.x < -0.03) p.x = 1.03;
       if (p.x > 1.03) p.x = -0.03;
       const alpha = p.a * (0.6 + 0.4 * Math.sin(t * 1.6 + p.tw));
-      const grad = ctx.createRadialGradient(p.x * canvas.width, p.y * canvas.height, 0, p.x * canvas.width, p.y * canvas.height, p.r * 3 * dpr);
-      grad.addColorStop(0, `rgba(${p.c},${alpha.toFixed(3)})`);
-      grad.addColorStop(1, `rgba(${p.c},0)`);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(p.x * canvas.width, p.y * canvas.height, p.r * 3 * dpr, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.globalAlpha = Math.max(0.05, alpha);
+      const size = p.r * 6 * dpr;
+      ctx.drawImage(sprites[p.c], p.x * canvas.width - size / 2, p.y * canvas.height - size / 2, size, size);
     }
+    ctx.globalAlpha = 1;
     requestAnimationFrame(tick);
   };
-  tick();
+  requestAnimationFrame(tick);
 }
 
 // ---------- init ----------

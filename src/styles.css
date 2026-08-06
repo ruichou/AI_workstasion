@@ -261,7 +261,6 @@ body {
   outline: none;
   line-height: 1;
   user-select: text;
-  backdrop-filter: blur(6px);
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
