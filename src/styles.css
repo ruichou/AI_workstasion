@@ -244,7 +244,7 @@ body {
 .right-col .settings-card {
   flex: 1.2;
   justify-content: space-evenly;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .row2 {
@@ -626,30 +626,30 @@ body {
 
 .ring-box {
   position: relative;
-  width: clamp(40px, min(7.5vw, 14vh), 112px);
-  height: clamp(40px, min(7.5vw, 14vh), 112px);
+  width: clamp(42px, min(8vw, 15vh), 122px);
+  height: clamp(42px, min(8vw, 15vh), 122px);
   aspect-ratio: 1;
   flex-shrink: 0;
 }
 
 @container (max-height: 260px) {
   .ring-box {
-    width: 84px;
-    height: 84px;
+    width: 92px;
+    height: 92px;
   }
 }
 
 @container (max-height: 220px) {
   .ring-box {
-    width: 70px;
-    height: 70px;
+    width: 76px;
+    height: 76px;
   }
 }
 
 @container (max-height: 180px) {
   .ring-box {
-    width: 56px;
-    height: 56px;
+    width: 60px;
+    height: 60px;
   }
 }
 

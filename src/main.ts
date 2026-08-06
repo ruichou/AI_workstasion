@@ -329,15 +329,15 @@ function updateFestivals() {
   list.push({ name: "元旦", t: new Date(y, 0, 1).getTime() });
   const el = $("cal-fest");
   el.innerHTML = list
-    .map((x) => {
+    .map((x, i) => {
       const d = new Date(x.t);
       const days = Math.round((x.t - today) / 86400000);
       const dot = x.name === "元旦" ? "fest-dot green" : "fest-dot";
       const when = days >= 0 ? `（还有 ${days} 天）` : "（已过）";
       const dateStr = x.range ?? `${d.getMonth() + 1}月${d.getDate()}日`;
-      return `<span class="${dot}"></span>${x.name} ${dateStr} ${when}`;
+      return `<div style="font-size:${Math.max(8, 10 - i)}px"><span class="${dot}"></span>${x.name} ${dateStr} ${when}</div>`;
     })
-    .join("<br>");
+    .join("");
 }
 
 function renderCalendar() {
