@@ -13,7 +13,20 @@
           <span class="brand-dot"></span>
           <span class="brand-name">工作台</span>
         </div>
-        <div class="win-controls">
+        <div class="topbar-ai" data-tauri-drag-region>
+          <div class="model-wrap">
+            <select id="ai-model" class="ai-model">
+              <option value="千问">千问</option>
+              <option value="豆包">豆包</option>
+              <option value="Kimi">Kimi</option>
+              <option value="智谱">智谱</option>
+              <option value="DeepSeek">DeepSeek</option>
+            </select>
+          </div>
+          <input id="ai-input" class="ai-input" placeholder="问 AI：输入问题，回车提问…" spellcheck="false" />
+          <button id="ai-send" class="ai-send">问 AI</button>
+        </div>
+        <div class="win-controls" data-tauri-drag-region>
           <button id="btn-pin" class="wc-btn" title="置顶切换">📌</button>
           <button id="btn-min" class="wc-btn" title="最小化">─</button>
           <button id="btn-max" class="wc-btn" title="最大化">□</button>
@@ -47,14 +60,15 @@
           <div class="habit-row">
             <button id="btn-water" class="habit-chip" title="点击 +1 杯，双击清零">💧 <span id="cnt-water">0</span>杯 <span class="habit-add">+</span></button>
             <button id="btn-smoke" class="habit-chip" title="点击 +1 根，双击清零">🚬 <span id="cnt-smoke">0</span>根 <span class="habit-add">+</span></button>
+            <button id="btn-habit-stats" class="habit-chip habit-stats-btn" title="查看周/月统计">📊</button>
           </div>
         </section>
 
         <!-- 行 1：系统状态 -->
         <section class="card sys-card">
-          <div class="card-head">
+          <div class="card-head" data-tauri-drag-region>
             <span class="card-title">系统状态</span>
-            <span class="status-good">● 运行良好</span>
+            <span id="status-badge" class="status-good">● 运行良好</span>
           </div>
           <div class="sys-rings">
             <div class="ring-box ring-cpu">
@@ -92,11 +106,13 @@
               </div>
             </div>
           </div>
+          <div class="sys-actions">
+            <button id="btn-clean-mem" class="sys-btn" title="刷新所有进程工作集，不关闭任何程序">🧹 清理内存</button>
+            <button id="btn-clean-junk" class="sys-btn" title="清理临时文件夹垃圾，占用中的文件自动跳过">🗑 清理垃圾</button>
+          </div>
         </section>
-
-        <!-- 行 1：日历 -->
         <section class="card cal-card">
-          <div class="card-head">
+          <div class="card-head" data-tauri-drag-region>
             <span id="cal-title" class="card-title">----年--月</span>
             <div class="cal-navs">
               <button id="cal-prev" class="cal-nav">‹</button>
@@ -111,7 +127,7 @@
 
         <!-- 行 1：待办 -->
         <section class="card todo-card">
-          <div class="card-head">
+          <div class="card-head" data-tauri-drag-region>
             <span class="card-title">待办事项</span>
             <button id="btn-todo-add" class="text-btn">+ 添加</button>
           </div>
@@ -125,35 +141,21 @@
         <!-- 行 2：自定义工作区 + 快捷工具/设置 + 便签 -->
         <div class="row2">
         <section class="card workspace-card">
-          <div class="card-head">
+          <div class="card-head" data-tauri-drag-region>
             <span class="card-title">自定义工作区</span>
-            <select id="ai-model" class="ai-model">
-              <option value="千问">千问</option>
-              <option value="豆包">豆包</option>
-              <option value="Kimi">Kimi</option>
-              <option value="智谱">智谱</option>
-              <option value="DeepSeek">DeepSeek</option>
-            </select>
-          </div>
-          <div class="ws-body">
-            <div class="ws-hint">拖拽常用组件到此处，打造你的专属工作区</div>
-            <div class="ai-wrap">
-              <textarea id="ai-input" class="ai-input" placeholder="输入问题，回车或点击发送，将用夸克浏览器提问…" spellcheck="false"></textarea>
-              <button id="ai-send" class="ai-send">问 AI</button>
-            </div>
           </div>
         </section>
 
         <!-- 行 2 中列：快捷工具 + 系统设置 -->
         <div class="right-col">
           <section class="card utils-card">
-            <div class="card-head">
+            <div class="card-head" data-tauri-drag-region>
               <span class="card-title">快捷工具</span>
             </div>
             <div id="tools-grid" class="tools-grid"></div>
           </section>
           <section class="card settings-card">
-            <div class="card-head">
+            <div class="card-head" data-tauri-drag-region>
               <span class="card-title">系统设置</span>
               <div class="set-actions">
                 <button id="btn-config" class="wc-btn" title="打开配置文件">⚙</button>
@@ -187,7 +189,7 @@
 
         <!-- 行 2：便签 -->
         <section class="card notes-card">
-          <div class="card-head">
+          <div class="card-head" data-tauri-drag-region>
             <span class="card-title">便签</span>
             <button id="btn-note-add" class="text-btn">+ 新建</button>
           </div>
@@ -204,11 +206,11 @@
 
       <!-- 快速启动栏 -->
       <section class="card launch-card">
-        <span class="launch-title">快速启动</span>
+        <span class="launch-title" data-tauri-drag-region>快速启动</span>
         <div id="apps-grid" class="apps-grid"></div>
       </section>
 
-      <footer class="statusbar">
+      <footer class="statusbar" data-tauri-drag-region>
         <span class="status-dot"></span>
         <span>已连接</span>
         <span class="sep">|</span>
@@ -245,14 +247,96 @@
       </div>
     </div>
 
+    <div id="habit-stats" class="app-picker hidden">
+      <div class="picker-box habit-stats-box">
+        <div class="picker-head">
+          <span class="picker-title">习惯统计</span>
+          <button id="habit-stats-close" class="picker-close">✕</button>
+        </div>
+        <div class="hs-grid">
+          <div class="hs-block">
+            <div class="hs-block-title">今日</div>
+            <div class="hs-big">💧 <span id="hs-today-water">0</span> 杯</div>
+            <div class="hs-big">🚬 <span id="hs-today-smoke">0</span> 根</div>
+            <button id="habit-reset" class="hs-reset">清零今日</button>
+          </div>
+          <div class="hs-block">
+            <div class="hs-block-title">本周（周一起）</div>
+            <div class="hs-big">💧 <span id="hs-week-water">0</span> 杯</div>
+            <div class="hs-big">🚬 <span id="hs-week-smoke">0</span> 根</div>
+            <div class="hs-avg">日均 <span id="hs-week-avg">0 / 0</span></div>
+          </div>
+          <div class="hs-block">
+            <div class="hs-block-title">本月</div>
+            <div class="hs-big">💧 <span id="hs-month-water">0</span> 杯</div>
+            <div class="hs-big">🚬 <span id="hs-month-smoke">0</span> 根</div>
+            <div class="hs-avg">日均 <span id="hs-month-avg">0 / 0</span></div>
+          </div>
+        </div>
+        <div class="hs-chart-title">近 7 天（杯/根）</div>
+        <div id="hs-chart" class="hs-chart"></div>
+        <div class="hs-chart-title">历史明细（近 14 条）</div>
+        <div id="hs-history" class="hs-history"></div>
+      </div>
+    </div>
+
+    <div id="ai-panel" class="app-picker hidden">
+      <div class="picker-box ai-panel-box">
+        <div class="picker-head">
+          <span class="picker-title">AI 对话 · <span id="ai-panel-model">--</span></span>
+          <select id="ai-panel-model-select" class="ai-panel-modelsel" title="切换模型"></select>
+          <button id="ai-panel-clear" class="picker-close" title="清空对话">🗑</button>
+          <button id="ai-panel-close" class="picker-close">✕</button>
+        </div>
+        <div id="ai-msgs" class="ai-msgs">
+          <div class="ai-msg ai-msg-empty">输入问题开始对话，可发图片/文件（图片需模型支持）</div>
+        </div>
+        <div class="ai-panel-foot">
+          <div id="ai-attach-list" class="ai-attach-list"></div>
+          <div class="ai-panel-input">
+            <button id="ai-attach" class="ai-attach" title="添加图片或文本文件">📎</button>
+            <textarea id="ai-chat-input" class="ai-chat-input" placeholder="输入问题，Enter 发送，Shift+Enter 换行" spellcheck="false"></textarea>
+            <button id="ai-chat-send" class="ai-send ai-chat-send">发送</button>
+          </div>
+          <div class="ai-panel-hint">模型：<span id="ai-panel-apimodel">--</span> · 上下文最近 20 条</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ai-key-panel" class="app-picker hidden">
+      <div class="picker-box ai-key-box">
+        <div class="picker-head">
+          <span class="picker-title">配置 <span id="ai-key-model">--</span> API Key</span>
+          <button id="ai-key-close" class="picker-close">✕</button>
+        </div>
+        <div id="ai-key-guide" class="ai-key-guide"></div>
+        <div class="ai-key-row">
+          <input id="ai-key-input" class="picker-search" type="password" placeholder="粘贴 API Key（形如 sk-xxxx）" spellcheck="false" />
+        </div>
+        <div class="ai-key-row">
+          <select id="ai-model-select" class="city-sel"></select>
+          <input id="ai-model-custom" class="picker-search ai-model-custom hidden" placeholder="输入自定义模型名" spellcheck="false" />
+        </div>
+        <button id="ai-key-save" class="ai-send ai-key-save">保存并开始对话</button>
+      </div>
+    </div>
+
     <div id="city-picker" class="app-picker hidden">
       <div class="picker-box">
         <div class="picker-head">
-          <span class="picker-title">设置城市</span>
-          <input id="city-search" class="picker-search" placeholder="搜索城市/区/镇…" />
+          <span class="picker-title">设置城市（全国省市区县镇）</span>
           <button id="city-close" class="picker-close">✕</button>
         </div>
-        <div id="city-list" class="city-list"></div>
+        <div class="city-casc">
+          <select id="city-prov" class="city-sel"></select>
+          <select id="city-cit" class="city-sel"></select>
+          <select id="city-dist" class="city-sel"></select>
+          <select id="city-town" class="city-sel"></select>
+        </div>
+        <div class="city-hint">依次选择 省 → 市 → 区/县 → 镇/街道（镇可省略），坐标自动从 open-meteo 查询</div>
+        <div class="picker-foot">
+          <button id="city-casc-save" class="text-btn">✓ 保存所选地区</button>
+        </div>
         <div class="picker-foot">
           <div class="city-custom">
             <input id="city-name" class="picker-search city-name-input" placeholder="自定义名称" />

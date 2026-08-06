@@ -35,6 +35,8 @@ struct Config {
     ai_url: String,
     off_time: String,
     apps: Vec<AppItem>,
+    ai_keys: std::collections::HashMap<String, String>,
+    ai_models: std::collections::HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -64,6 +66,8 @@ impl Default for Config {
                 blank("GitHub", "🐙"),
                 blank("服务器管理", "☁️"),
             ],
+            ai_keys: std::collections::HashMap::new(),
+            ai_models: std::collections::HashMap::new(),
         }
     }
 }
@@ -75,6 +79,18 @@ struct SysInfo {
     mem_total: u64,
     disk_used: u64,
     disk_total: u64,
+}
+
+#[derive(Serialize, Default)]
+struct CleanResult {
+    freed_mb: u64,
+    processes: u32,
+}
+
+#[derive(Serialize, Default)]
+struct JunkResult {
+    files: u64,
+    bytes: u64,
 }
 
 #[derive(Serialize, Clone)]
@@ -146,31 +162,157 @@ fn get_config(state: State<'_, AppState>) -> Config {
     state.config.lock().unwrap().clone()
 }
 
+use std::sync::OnceLock;
+
+fn sysinfo_sys() -> &'static std::sync::Mutex<System> {
+    static SYS: OnceLock<std::sync::Mutex<System>> = OnceLock::new();
+    SYS.get_or_init(|| std::sync::Mutex::new(System::new_all()))
+}
+
+fn sysinfo_disks() -> &'static std::sync::Mutex<Disks> {
+    static DISKS: OnceLock<std::sync::Mutex<Disks>> = OnceLock::new();
+    DISKS.get_or_init(|| std::sync::Mutex::new(Disks::new_with_refreshed_list()))
+}
+
 #[tauri::command]
 async fn get_sysinfo() -> SysInfo {
-    let mut sys = System::new_all();
-    sys.refresh_memory();
-    sys.refresh_cpu_usage();
+    {
+        let mut sys = sysinfo_sys().lock().unwrap();
+        sys.refresh_memory();
+        sys.refresh_cpu_usage();
+    }
     tokio::time::sleep(Duration::from_millis(250)).await;
-    sys.refresh_cpu_usage();
-
-    let disks = Disks::new_with_refreshed_list();
-    let c_disk = disks
-        .iter()
-        .find(|d| d.mount_point().to_string_lossy().to_uppercase().starts_with("C:"))
-        .or_else(|| disks.iter().max_by_key(|d| d.total_space()));
-    let (disk_total, disk_used) = match c_disk {
-        Some(d) => (d.total_space(), d.total_space().saturating_sub(d.available_space())),
-        None => (0, 0),
+    let (cpu, mem_used, mem_total) = {
+        let mut sys = sysinfo_sys().lock().unwrap();
+        sys.refresh_cpu_usage();
+        (
+            sys.global_cpu_usage(),
+            sys.used_memory(),
+            sys.total_memory(),
+        )
+    };
+    let (disk_used, disk_total) = {
+        let mut disks = sysinfo_disks().lock().unwrap();
+        disks.refresh(true);
+        match disks
+            .iter()
+            .find(|d| d.mount_point().to_string_lossy().to_uppercase().starts_with("C:"))
+            .or_else(|| disks.iter().max_by_key(|d| d.total_space()))
+        {
+            Some(d) => (
+                d.total_space().saturating_sub(d.available_space()),
+                d.total_space(),
+            ),
+            None => (0, 0),
+        }
     };
 
     SysInfo {
-        cpu: sys.global_cpu_usage(),
-        mem_used: sys.used_memory(),
-        mem_total: sys.total_memory(),
+        cpu,
+        mem_used,
+        mem_total,
         disk_used,
         disk_total,
     }
+}
+
+/// 一键清理内存：对除本进程和系统关键进程外的所有进程执行 EmptyWorkingSet，
+/// 把物理内存页刷回页面文件。不会关闭任何程序、不会丢失任何数据。
+#[tauri::command]
+async fn clean_memory() -> Result<CleanResult, String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, SetProcessWorkingSetSize, PROCESS_ACCESS_RIGHTS,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA,
+    };
+
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    let before = sys.used_memory();
+
+    let own_pid = unsafe { GetCurrentProcessId() };
+    let access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA;
+    let mut cleaned = 0u32;
+
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    for p in sys.processes().values() {
+        let pid = p.pid().as_u32();
+        if pid == 0 || pid == 4 || pid == own_pid {
+            continue;
+        }
+        unsafe {
+            let Ok(handle) = OpenProcess(access, false, pid) else { continue };
+            if SetProcessWorkingSetSize(handle, usize::MAX, usize::MAX).is_ok() {
+                cleaned += 1;
+            }
+            let _ = CloseHandle(handle);
+        }
+    }
+
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    sys.refresh_memory();
+    let after = sys.used_memory();
+
+    Ok(CleanResult {
+        freed_mb: before.saturating_sub(after) / (1024 * 1024),
+        processes: cleaned,
+    })
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let mut visited = 0u64;
+    let mut stack: Vec<PathBuf> = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        visited += 1;
+        if visited > 8000 {
+            return total;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let md = match e.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if md.is_dir() {
+                stack.push(p);
+            } else {
+                total += md.len();
+            }
+        }
+    }
+    total
+}
+
+/// 一键清理垃圾：删除用户临时目录与 Windows 临时目录中的内容。
+/// 正在被占用/使用的文件删除会失败并被自动跳过，绝不触碰任何正常文件。
+#[tauri::command]
+async fn clean_junk() -> Result<JunkResult, String> {
+    let mut dirs: Vec<PathBuf> = vec![std::env::temp_dir()];
+    if let Some(windir) = std::env::var_os("WINDIR") {
+        dirs.push(PathBuf::from(&windir).join("Temp"));
+    }
+
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    for dir in dirs {
+        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            let size = dir_size(&p);
+            let ok = if p.is_dir() {
+                fs::remove_dir_all(&p).is_ok()
+            } else {
+                fs::remove_file(&p).is_ok()
+            };
+            if ok {
+                files += 1;
+                bytes += size;
+            }
+        }
+    }
+    Ok(JunkResult { files, bytes })
 }
 
 fn city_coords(city: &str) -> Option<(f64, f64)> {
@@ -318,6 +460,99 @@ fn launch_app(path: String, args: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// 解析 .lnk 快捷方式指向的真实 exe 路径
+fn lnk_target(lnk: &str) -> Option<String> {
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT, IPersistFile,
+        STGM_READ,
+    };
+    use windows::Win32::UI::Shell::IShellLinkW;
+    const CLSID_SHELL_LINK: windows::core::GUID =
+        windows::core::GUID::from_u128(0x00021401_0000_0000_C000_000000000046);
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT(0));
+        let link: IShellLinkW = CoCreateInstance(&CLSID_SHELL_LINK, None, CLSCTX_ALL).ok()?;
+        let persist: IPersistFile = link.cast().ok()?;
+        let wide: Vec<u16> = lnk.encode_utf16().chain(std::iter::once(0)).collect();
+        persist.Load(PCWSTR(wide.as_ptr()), STGM_READ).ok()?;
+        let mut buf = [0u16; 1024];
+        let _ = link.GetPath(&mut buf, std::ptr::null_mut(), 0);
+        CoUninitialize();
+        let target = String::from_utf16_lossy(&buf).trim_end_matches('\0').to_string();
+        if target.is_empty() { None } else { Some(target) }
+    }
+}
+
+/// 查找运行中且 exe 名匹配的进程
+fn find_process_by_exe(exe_path: &str) -> Option<u32> {
+    let exe_name = std::path::Path::new(exe_path)
+        .file_name()?
+        .to_string_lossy()
+        .to_lowercase();
+    let mut sys = System::new_all();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, false);
+    sys.processes().values().find_map(|p| {
+        p.exe()
+            .and_then(|e| e.file_name())
+            .map(|f| f.to_string_lossy().to_lowercase() == exe_name)
+            .unwrap_or(false)
+            .then(|| p.pid().as_u32())
+    })
+}
+
+/// 激活指定进程的窗口（最小化则还原并置前）
+fn activate_process_window(pid: u32) -> bool {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindowThreadProcessId, IsWindowVisible, SetForegroundWindow, ShowWindow,
+        SW_RESTORE,
+    };
+    use windows::Win32::Foundation::HWND;
+    static mut TARGET_PID: u32 = 0;
+    static mut SLOT: Option<HWND> = None;
+    unsafe {
+        TARGET_PID = pid;
+        SLOT = None;
+        extern "system" fn enum_cb(hwnd: HWND, _lparam: LPARAM) -> windows::core::BOOL {
+            let mut wpid: u32 = 0;
+            unsafe {
+                let _ = GetWindowThreadProcessId(hwnd, Some(&mut wpid));
+                if wpid == TARGET_PID && IsWindowVisible(hwnd).as_bool() {
+                    SLOT = Some(hwnd);
+                    return windows::core::BOOL(0);
+                }
+            }
+            windows::core::BOOL(1)
+        }
+        let _ = EnumWindows(Some(enum_cb), LPARAM(0));
+        if let Some(hwnd) = SLOT {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
+            return true;
+        }
+    }
+    false
+}
+
+/// 点击快速启动：已在运行则激活其窗口，否则正常启动
+#[tauri::command]
+fn launch_or_activate(path: String, args: Option<String>) -> Result<(), String> {
+    let exe = if path.to_lowercase().ends_with(".lnk") {
+        lnk_target(&path).unwrap_or_default()
+    } else {
+        path.clone()
+    };
+    if !exe.is_empty() {
+        if let Some(pid) = find_process_by_exe(&exe) {
+            if activate_process_window(pid) {
+                return Ok(());
+            }
+        }
+    }
+    launch_app(path, args)
+}
+
 #[tauri::command]
 fn open_config(app: AppHandle) -> Result<String, String> {
     let path = config_path(&app)?;
@@ -399,8 +634,16 @@ mod temps {
     }
 }
 
+static TEMP_CACHE: OnceLock<std::sync::Mutex<Option<(std::time::Instant, Temps)>>> = OnceLock::new();
+
 #[tauri::command]
 async fn get_temps() -> Result<Temps, String> {
+    let cache = TEMP_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Some((at, t)) = cache.lock().unwrap().as_ref() {
+        if at.elapsed() < Duration::from_secs(10) {
+            return Ok(t.clone());
+        }
+    }
     let cpu = tauri::async_runtime::spawn_blocking(|| temps::cpu_temp_celsius())
         .await
         .ok()
@@ -409,7 +652,9 @@ async fn get_temps() -> Result<Temps, String> {
         .await
         .ok()
         .flatten();
-    Ok(Temps { cpu, disk })
+    let t = Temps { cpu, disk };
+    *cache.lock().unwrap() = Some((std::time::Instant::now(), t.clone()));
+    Ok(t)
 }
 
 #[cfg(target_os = "windows")]
@@ -681,6 +926,367 @@ fn open_ai_chat(state: State<'_, AppState>, model: String, question: String) -> 
     Ok(())
 }
 
+// ---------- CDP 浏览器自动化（内置 AI 问答） ----------
+const CDP_PORT: u16 = 9230;
+
+#[derive(Serialize)]
+struct AskResult {
+    ok: bool,
+    msg: String,
+}
+
+fn edge_path() -> Option<PathBuf> {
+    [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .find(|p| p.exists())
+}
+
+fn launch_ai_edge() -> Result<(), String> {
+    let Some(edge) = edge_path() else {
+        return Err(String::from("未找到 Microsoft Edge"));
+    };
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| String::from("."));
+    let profile = format!(r"{local}\glassworkspace\edge-ai");
+    std::process::Command::new(edge)
+        .args([
+            format!("--remote-debugging-port={CDP_PORT}"),
+            format!("--user-data-dir={profile}"),
+            String::from("--window-size=1000,720"),
+            String::from("--no-first-run"),
+            String::from("--no-default-browser-check"),
+            String::from("--restore-last-session"),
+        ])
+        .spawn()
+        .map_err(|e| format!("启动 Edge 失败: {e}"))?;
+    Ok(())
+}
+
+async fn cdp_ready(client: &reqwest::Client) -> bool {
+    for _ in 0..30 {
+        if client
+            .get(format!("http://127.0.0.1:{CDP_PORT}/json/version"))
+            .send()
+            .await
+            .is_ok()
+        {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    false
+}
+
+type Ws = tokio_tungstenite::WebSocketStream<
+    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+>;
+
+async fn cdp_call(
+    ws: &mut Ws,
+    id: u64,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    let frame = serde_json::json!({ "id": id, "method": method, "params": params });
+    ws.send(Message::Text(frame.to_string().into()))
+        .await
+        .map_err(|e| e.to_string())?;
+    loop {
+        let Some(Ok(Message::Text(t))) = ws.next().await else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) else {
+            continue;
+        };
+        if v.get("id").and_then(|i| i.as_u64()) == Some(id) {
+            if let Some(err) = v.get("error") {
+                return Err(err.to_string());
+            }
+            return Ok(v.get("result").cloned().unwrap_or(serde_json::Value::Null));
+        }
+    }
+}
+
+async fn wait_page_loaded(ws: &mut Ws, next_id: &mut u64) -> Result<(), String> {
+    for _ in 0..50 {
+        *next_id += 1;
+        let r = cdp_call(
+            ws,
+            *next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": "document.readyState", "returnByValue": true}),
+        )
+        .await;
+        if let Ok(v) = r {
+            if v.pointer("/result/value").and_then(|x| x.as_str()) == Some("complete") {
+                tokio::time::sleep(Duration::from_millis(2500)).await;
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    Err(String::from("页面加载超时"))
+}
+
+#[tauri::command]
+async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, String> {
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
+    use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+
+    let client = reqwest::Client::new();
+    if !cdp_ready(&client).await {
+        launch_ai_edge()?;
+        if !cdp_ready(&client).await {
+            return Err(String::from("浏览器启动超时"));
+        }
+    }
+
+    let url = ai_url_for(&model);
+    let resp = client
+        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new?{}", urlencode(&url)))
+        .send()
+        .await
+        .map_err(|e| format!("创建标签页失败: {e}"))?;
+    let tab: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let ws_url = tab
+        .get("webSocketDebuggerUrl")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| String::from("无法获取调试连接"))?
+        .to_string();
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|e| format!("连接调试端口失败: {e}"))?;
+    let mut next_id: u64 = 100;
+
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
+    wait_page_loaded(&mut ws, &mut next_id).await?;
+
+    let qstr = serde_json::to_string(&question).unwrap_or_default();
+    let script = format!(
+        r#"(() => {{
+          const Q = {qstr};
+          const box = document.querySelector('textarea') || document.querySelector('[contenteditable="true"]');
+          if (!box) return {{ ok: false, msg: 'no-input' }};
+          if (box.isContentEditable) {{
+            box.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, Q);
+          }} else {{
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+            if (setter) setter.call(box, Q); else box.value = Q;
+            box.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            box.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            box.focus();
+          }}
+          const btns = [...document.querySelectorAll('button')];
+          const btn = btns.find(b => /发送|提问|send/i.test(b.textContent || '') && b.offsetParent !== null)
+                   || btns.find(b => /发送|send/i.test(b.getAttribute('aria-label') || ''));
+          if (btn) {{ btn.click(); return {{ ok: true, msg: 'button' }}; }}
+          box.dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }}));
+          return {{ ok: true, msg: 'enter' }};
+        }})()"#
+    );
+
+    next_id += 1;
+    let res = cdp_call(
+        &mut ws,
+        next_id,
+        "Runtime.evaluate",
+        serde_json::json!({ "expression": script, "returnByValue": true }),
+    )
+    .await?;
+
+    let value = res.pointer("/result/value");
+    let ok = value.and_then(|v| v.get("ok")).and_then(|v| v.as_bool()).unwrap_or(false);
+    let msg = value
+        .and_then(|v| v.get("msg"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let _ = ws.close(Some(CloseFrame {
+        code: CloseCode::Normal,
+        reason: "done".into(),
+    }));
+
+    if ok {
+        Ok(AskResult {
+            ok: true,
+            msg: format!("已在 {model} 中提问（{msg}）"),
+        })
+    } else if msg == "no-input" {
+        Err(String::from("页面还没加载出输入框，请稍后手动输入"))
+    } else {
+        Err(String::from("自动提问失败"))
+    }
+}
+
+// ---------- AI API 直答（OpenAI 兼容，SSE 流式） ----------
+const AI_PLATFORMS: &[(&str, &str, &str)] = &[
+    ("千问", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-flash"),
+    ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-v4-flash"),
+    ("Kimi", "https://api.moonshot.cn/v1", "kimi-k3"),
+    ("智谱", "https://open.bigmodel.cn/api/paas/v4", "glm-4.7-flash"),
+    ("豆包", "https://ark.cn-beijing.volces.com/api/v3", ""),
+];
+
+fn ai_base_url(model: &str) -> String {
+    for (name, base, _) in AI_PLATFORMS {
+        if *name == model {
+            return base.to_string();
+        }
+    }
+    String::from("https://dashscope.aliyuncs.com/compatible-mode/v1")
+}
+
+fn ai_default_model(model: &str) -> String {
+    for (name, _, m) in AI_PLATFORMS {
+        if *name == model && !m.is_empty() {
+            return m.to_string();
+        }
+    }
+    String::new()
+}
+
+#[derive(Clone, Serialize)]
+struct AiDelta {
+    delta: String,
+    done: bool,
+    error: Option<String>,
+}
+
+#[tauri::command]
+async fn ask_ai(
+    state: State<'_, AppState>,
+    model: String,
+    messages: Vec<serde_json::Value>,
+    channel: tauri::ipc::Channel<AiDelta>,
+) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let key = cfg.ai_keys.get(&model).cloned().unwrap_or_default();
+    if key.trim().is_empty() {
+        return Err(String::from("missing-key"));
+    }
+    let api_model = cfg
+        .ai_models
+        .get(&model)
+        .cloned()
+        .filter(|m| !m.trim().is_empty())
+        .unwrap_or_else(|| ai_default_model(&model));
+    if api_model.trim().is_empty() {
+        return Err(String::from("missing-model"));
+    }
+
+    let url = format!("{}/chat/completions", ai_base_url(&model));
+    let body = serde_json::json!({
+        "model": api_model.trim(),
+        "messages": messages,
+        "stream": true,
+    });
+
+    let resp = state
+        .http
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", key.trim()))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        let msg = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| {
+                v.pointer("/error/message")
+                    .or_else(|| v.pointer("/message"))
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| {
+                text.chars().take(200).collect::<String>()
+            });
+        return Err(format!("API 返回 {status}: {msg}"));
+    }
+
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buf = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("读取流失败: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(pos) = buf.find("\n\n") {
+            let event = buf[..pos].to_string();
+            buf = buf[pos + 2..].to_string();
+            for line in event.lines() {
+                let Some(data) = line.strip_prefix("data:") else {
+                    continue;
+                };
+                let data = data.trim();
+                if data == "[DONE]" {
+                    let _ = channel.send(AiDelta {
+                        delta: String::new(),
+                        done: true,
+                        error: None,
+                    });
+                    return Ok(());
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
+                    if let Some(d) = v["choices"][0]["delta"]["content"].as_str() {
+                        let _ = channel.send(AiDelta {
+                            delta: d.to_string(),
+                            done: false,
+                            error: None,
+                        });
+                    }
+                    if let Some(err) = v["error"].as_object() {
+                        let _ = channel.send(AiDelta {
+                            delta: String::new(),
+                            done: true,
+                            error: Some(
+                                err.get("message")
+                                    .and_then(|m| m.as_str())
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| serde_json::to_string(err).unwrap_or_default()),
+                            ),
+                        });
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+    let _ = channel.send(AiDelta {
+        delta: String::new(),
+        done: true,
+        error: None,
+    });
+    Ok(())
+}
+
+/// 用系统默认浏览器打开 URL
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if url.is_empty() {
+        return Ok(());
+    }
+    std::process::Command::new("cmd")
+        .args(["/c", "start", "", &url])
+        .spawn()
+        .map_err(|e| format!("打开链接失败: {e}"))?;
+    Ok(())
+}
+
 fn urlencode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
@@ -741,6 +1347,65 @@ fn scan_dir_files(dir: &std::path::Path, max_depth: usize) -> Vec<std::path::Pat
     out
 }
 
+fn scan_registry_apps(push: &mut impl FnMut(String, String)) {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::RegKey;
+
+    let roots = [
+        (
+            HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+    ];
+    for (root, sub) in roots {
+        let Ok(key) = RegKey::predef(root).open_subkey_with_flags(sub, KEY_READ) else {
+            continue;
+        };
+        for sub_name in key.enum_keys().flatten() {
+            let Ok(sk) = key.open_subkey_with_flags(&sub_name, KEY_READ) else {
+                continue;
+            };
+            let Ok(name) = sk.get_value::<String, _>("DisplayName") else {
+                continue;
+            };
+            let name = name.trim();
+            if name.is_empty() || name.contains("更新") || name.starts_with("卸载") {
+                continue;
+            }
+            let mut path = sk
+                .get_value::<String, _>("DisplayIcon")
+                .unwrap_or_default()
+                .trim()
+                .trim_matches('"')
+                .split(',')
+                .next()
+                .unwrap_or("")
+                .trim_matches('"')
+                .to_string();
+            if path.is_empty() {
+                if let Ok(loc) = sk.get_value::<String, _>("InstallLocation") {
+                    let loc = loc.trim();
+                    if !loc.is_empty() {
+                        path = format!(r"{loc}\{}.exe", name);
+                    }
+                }
+            }
+            if path.is_empty() {
+                continue;
+            }
+            push(name.to_string(), path);
+        }
+    }
+}
+
 #[tauri::command]
 fn scan_apps() -> Vec<AppItem> {
     let mut apps: Vec<AppItem> = Vec::new();
@@ -764,6 +1429,13 @@ fn scan_apps() -> Vec<AppItem> {
     if let Ok(pd) = std::env::var("ProgramData") {
         start_dirs.push(pd + r"\Microsoft\Windows\Start Menu\Programs");
     }
+    // 1.1 桌面快捷方式（用户 + 公共桌面）
+    if let Ok(dt) = std::env::var("USERPROFILE") {
+        start_dirs.push(dt + r"\Desktop");
+    }
+    if let Ok(pd) = std::env::var("PUBLIC") {
+        start_dirs.push(pd + r"\Desktop");
+    }
     for dir in start_dirs {
         for f in scan_dir_files(std::path::Path::new(&dir), 3) {
             if f.extension().map(|e| e.to_string_lossy().to_lowercase() == "lnk").unwrap_or(false) {
@@ -777,6 +1449,9 @@ fn scan_apps() -> Vec<AppItem> {
             }
         }
     }
+
+    // 1.2 注册表已安装程序（覆盖 D 盘/自定义安装位置的软件，如 QQ）
+    scan_registry_apps(&mut push);
 
     // 2. Program Files / (x86) 每个一级目录的主 exe（体积最大）
     for pf in [r"C:\Program Files", r"C:\Program Files (x86)"] {
@@ -1047,6 +1722,7 @@ pub fn run() {
             set_window_size,
             set_eye_care,
             launch_app,
+            launch_or_activate,
             launch_tool,
             open_config,
             reload_config,
@@ -1054,7 +1730,12 @@ pub fn run() {
             save_config,
             scan_apps,
             restore_eye_care,
-            get_app_icon
+            get_app_icon,
+            clean_memory,
+            clean_junk,
+            ask_ai_browser,
+            ask_ai,
+            open_external
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
