@@ -152,8 +152,8 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 3.15fr) minmax(0, 4.7fr) minmax(0, 2.4fr) minmax(0, 3.8fr);
-  grid-template-rows: minmax(130px, 5fr) minmax(170px, 7fr);
-  gap: 14px;
+  grid-template-rows: minmax(120px, 5fr) minmax(140px, 7fr) minmax(130px, 3fr);
+  gap: 10px;
   min-height: 0;
 }
 
@@ -162,7 +162,7 @@ body {
   grid-column: 4;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
   min-height: 0;
 }
@@ -178,8 +178,8 @@ body {
 }
 
 .launch-card {
-  grid-row: 2;
-  grid-column: 1 / span 2;
+  grid-row: 3;
+  grid-column: 1 / -1;
 }
 
 .ai-card {
@@ -188,13 +188,31 @@ body {
 }
 
 .ai-hint {
-  font-size: clamp(8.5px, 0.7vw, 11px);
+  font-size: clamp(9px, 0.7vw, 11px);
   color: var(--text-muted);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   padding: 2px 8px;
   border-radius: 8px;
   flex-shrink: 0;
+}
+
+.ai-model {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 3px 6px;
+  font-size: clamp(10px, 0.75vw, 12px);
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 110px;
+}
+
+.ai-model option {
+  background: #1a1e30;
+  color: var(--text);
 }
 
 .ai-wrap {
@@ -445,19 +463,35 @@ body {
 
 .sys-rings {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  gap: 8px;
+  display: grid;
+  grid-template-areas:
+    ". cpu ."
+    "mem . disk";
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: 1fr 1fr;
+  place-items: center;
+  gap: 2px 6px;
   min-height: 0;
 }
 
 .ring-box {
   position: relative;
-  width: clamp(52px, 8vw, 128px);
-  height: clamp(52px, 8vw, 128px);
+  width: clamp(46px, 6.5vw, 92px);
+  height: clamp(46px, 6.5vw, 92px);
   aspect-ratio: 1;
   flex-shrink: 0;
+}
+
+.ring-box.ring-cpu {
+  grid-area: cpu;
+}
+
+.ring-box.ring-mem {
+  grid-area: mem;
+}
+
+.ring-box.ring-disk {
+  grid-area: disk;
 }
 
 .ring {
@@ -503,19 +537,19 @@ body {
 }
 
 .ring-val {
-  font-size: clamp(13px, 1.6vw, 26px);
+  font-size: clamp(13px, 1.5vw, 24px);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .ring-label {
-  font-size: clamp(9px, 0.75vw, 12px);
+  font-size: clamp(10px, 0.85vw, 13px);
   color: var(--text-2);
   margin-top: 1px;
 }
 
 .ring-sub {
-  font-size: clamp(8px, 0.65vw, 10.5px);
+  font-size: clamp(9px, 0.75vw, 12px);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -612,12 +646,10 @@ body {
 .cal-fest {
   flex-shrink: 0;
   margin-top: 6px;
-  font-size: clamp(9px, 0.7vw, 11.5px);
+  font-size: clamp(11px, 0.85vw, 13.5px);
   color: var(--text-2);
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.55;
 }
 
 .cal-day.out {
@@ -830,6 +862,37 @@ body {
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: clamp(4px, 0.5vw, 8px);
   min-height: 0;
+}
+
+.launch-card .apps-grid {
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  grid-template-rows: 1fr;
+}
+
+.launch-card .app-ico {
+  width: clamp(24px, 2.8vw, 42px);
+  height: clamp(24px, 2.8vw, 42px);
+  font-size: clamp(13px, 1.5vw, 20px);
+  border-radius: clamp(8px, 0.8vw, 12px);
+  box-shadow: none;
+}
+
+.launch-card .app-name {
+  font-size: clamp(7.5px, 0.6vw, 10px);
+  line-height: 1.2;
+}
+
+.launch-card .app-tile {
+  gap: 2px;
+}
+
+.launch-card .tabs {
+  margin-bottom: 4px;
+}
+
+.launch-card .tab {
+  font-size: 12px;
+  padding: 2px 2px 3px;
 }
 
 .app-tile {

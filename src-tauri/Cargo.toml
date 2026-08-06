@@ -8,7 +8,7 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["unstable"] }
+tauri = { version = "2", features = ["unstable", "tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
@@ -24,6 +24,7 @@ windows = { version = "0.61", features = [
     "Win32_UI_ColorSystem",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Foundation",
 ] }
 

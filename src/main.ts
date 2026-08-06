@@ -335,7 +335,12 @@ function updateFestivals() {
   const next3 = list.slice(0, 3);
   const el = $("cal-fest");
   if (next3.length) {
-    el.textContent = next3.map((x) => `${x.name} ${fmtRemain(Math.round((x.t - today) / 86400000))}`).join(" · ");
+    el.innerHTML = next3
+      .map((x) => {
+        const days = Math.round((x.t - today) / 86400000);
+        return days === 0 ? `<b>🎉 ${x.name} 今天</b>` : `${x.name} ${fmtRemain(days)}`;
+      })
+      .join("<br>");
   } else {
     el.textContent = "";
   }
@@ -819,7 +824,7 @@ function initSettings() {
   $("btn-close").addEventListener("click", () => {
     invoke("restore_eye_care")
       .catch(() => {})
-      .finally(() => win?.close());
+      .finally(() => win?.hide());
   });
 }
 
@@ -836,12 +841,18 @@ function toast(msg: string) {
 
 function initAi() {
   const input = $("ai-input") as HTMLTextAreaElement;
+  const model = $("ai-model") as HTMLSelectElement;
+  const savedModel = localStorage.getItem("ai-model");
+  if (savedModel && Array.from(model.options).some((o) => o.value === savedModel)) {
+    model.value = savedModel;
+  }
+  model.addEventListener("change", () => localStorage.setItem("ai-model", model.value));
   const send = () => {
     const q = input.value.trim();
     if (!q) return;
     writeText(q).catch(() => {});
-    invoke("open_ai_chat", { question: q }).catch((e) => alert(e));
-    toast("已打开千问并复制问题，如页面未自动填入请按 Ctrl+V");
+    invoke("open_ai_chat", { model: model.value, question: q }).catch((e) => alert(e));
+    toast(`已打开${model.value}并复制问题，如页面未自动填入请按 Ctrl+V`);
   };
   $("ai-send").addEventListener("click", send);
   input.addEventListener("keydown", (e) => {

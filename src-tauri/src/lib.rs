@@ -619,13 +619,33 @@ fn set_window_size(app: AppHandle, width: f64, height: f64) -> Result<(), String
         .map_err(|e| e.to_string())
 }
 
+const AI_MODELS: &[(&str, &str)] = &[
+    ("千问", "https://www.qianwen.com/"),
+    ("豆包", "https://www.doubao.com/chat/"),
+    ("Kimi", "https://www.kimi.com/"),
+    ("智谱", "https://chatglm.cn/"),
+    ("DeepSeek", "https://chat.deepseek.com/"),
+];
+
+fn ai_url_for(model: &str) -> String {
+    if model.is_empty() {
+        return String::from("https://www.qianwen.com/");
+    }
+    for (name, url) in AI_MODELS {
+        if *name == model {
+            return url.to_string();
+        }
+    }
+    String::from("https://www.qianwen.com/")
+}
+
 #[tauri::command]
-fn open_ai_chat(state: State<'_, AppState>, question: String) -> Result<(), String> {
+fn open_ai_chat(state: State<'_, AppState>, model: String, question: String) -> Result<(), String> {
     let cfg = state.config.lock().unwrap().clone();
-    let base = if cfg.ai_url.trim().is_empty() {
-        String::from("https://www.qianwen.com/")
-    } else {
+    let base = if model == "千问" && !cfg.ai_url.trim().is_empty() {
         cfg.ai_url.clone()
+    } else {
+        ai_url_for(&model)
     };
     let url = if base.contains("{q}") {
         base.replace("{q}", &urlencode(&question))
@@ -801,6 +821,58 @@ fn save_config(app: AppHandle, state: State<'_, AppState>, cfg: Config) -> Resul
     Ok(())
 }
 
+fn toggle_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        match win.is_visible() {
+            Ok(true) => {
+                let _ = win.hide();
+            }
+            _ => {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_ctrl_triple_detector(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+        let mut pressed = false;
+        let mut count = 0u32;
+        let mut last = std::time::Instant::now();
+        let mut cooldown = std::time::Instant::now();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            let down = unsafe { GetAsyncKeyState(0x11) } as i32 & 0x8000 != 0;
+            if down && !pressed {
+                pressed = true;
+                if cooldown.elapsed().as_millis() < 600 {
+                    continue;
+                }
+                let now = std::time::Instant::now();
+                if now.duration_since(last).as_millis() < 1500 {
+                    count += 1;
+                } else {
+                    count = 1;
+                }
+                last = now;
+                if count >= 3 {
+                    count = 0;
+                    cooldown = std::time::Instant::now();
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        toggle_window(&app);
+                    });
+                }
+            } else if !down && pressed {
+                pressed = false;
+            }
+        }
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -810,9 +882,47 @@ pub fn run() {
             let cfg = load_config(&app.handle());
             *app.state::<AppState>().config.lock().unwrap() = cfg;
 
+            use tauri::menu::{MenuBuilder, MenuItemBuilder};
+            use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+            let show_i = MenuItemBuilder::with_id("show", "显示工作台").build(app)?;
+            let quit_i = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .items(&[&show_i, &quit_i])
+                .build()?;
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => toggle_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+
             let _window = app.get_webview_window("main");
 
+            #[cfg(target_os = "windows")]
+            spawn_ctrl_triple_detector(app.handle().clone());
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_config,

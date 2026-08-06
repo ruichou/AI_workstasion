@@ -56,7 +56,7 @@
             <span class="status-good">● 运行良好</span>
           </div>
           <div class="sys-rings">
-            <div class="ring-box">
+            <div class="ring-box ring-cpu">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
                 <circle id="ring-cpu" class="ring-fg cpu" cx="60" cy="60" r="50" />
@@ -67,7 +67,7 @@
                 <div class="ring-sub" id="val-cputemp">--</div>
               </div>
             </div>
-            <div class="ring-box">
+            <div class="ring-box ring-mem">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
                 <circle id="ring-mem" class="ring-fg mem" cx="60" cy="60" r="50" />
@@ -78,7 +78,7 @@
                 <div class="ring-sub" id="val-mem">--</div>
               </div>
             </div>
-            <div class="ring-box">
+            <div class="ring-box ring-disk">
               <svg class="ring" viewBox="0 0 120 120">
                 <circle class="ring-bg" cx="60" cy="60" r="50" />
                 <circle id="ring-disk" class="ring-fg disk" cx="60" cy="60" r="50" />
@@ -138,7 +138,13 @@
         <section class="card ai-card">
           <div class="card-head">
             <span class="card-title">AI 对话</span>
-            <span class="ai-hint">千问</span>
+            <select id="ai-model" class="ai-model">
+              <option value="千问">千问</option>
+              <option value="豆包">豆包</option>
+              <option value="Kimi">Kimi</option>
+              <option value="智谱">智谱</option>
+              <option value="DeepSeek">DeepSeek</option>
+            </select>
           </div>
           <div class="ai-wrap">
             <textarea id="ai-input" class="ai-input" placeholder="输入问题，回车或点击发送，将用夸克浏览器提问千问…" spellcheck="false"></textarea>
