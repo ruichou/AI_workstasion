@@ -914,8 +914,17 @@ function updateOffWork() {
   const el = $("off-work");
   if (!el) return;
   const now = new Date();
-  const [h, m] = offTime.split(":").map((x) => Number(x) || 0);
-  const off = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+  const parts = offTime.split(":");
+  const h = Number(parts[0]);
+  const m = parts.length > 1 ? Number(parts[1]) : 0;
+  const off = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    Number.isFinite(h) ? h : 18,
+    Number.isFinite(m) ? m : 0,
+    0,
+  );
   if (now >= off) {
     el.textContent = "🎉 已下班";
     return;
