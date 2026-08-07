@@ -357,6 +357,7 @@ async function autoRelogin(sites: string[]) {
       ok = true;
     } catch (e) {
       console.error(`自动登录 ${s} 失败:`, e);
+      toast(`${s} 自动登录失败：${String(e).slice(0, 60)}`);
     }
   }
   if (ok) {
@@ -845,9 +846,23 @@ async function saveSiteCookies() {
     sites[s.name] = cur;
   }
   cfg.sites = sites;
-  await persistConfig(cfg);
   $("site-panel").classList.add("hidden");
+  await persistConfig(cfg);
   toast("已保存");
+  // 有账号密码但无 Cookie 的站点自动登录
+  const needLogin = SALES_SITES.filter((s) => {
+    const sc = sites[s.name];
+    return sc && sc.username && sc.password && !sc.cookie;
+  });
+  for (const s of needLogin) {
+    toast(`${s.name} 正在自动登录…`);
+    try {
+      await invoke<string>("auto_login_site", { site: s.name });
+      toast(`${s.name} 登录成功，数据已刷新`);
+    } catch (e) {
+      toast(`${s.name} 自动登录失败：${String(e).slice(0, 60)}`);
+    }
+  }
   void refreshSales();
 }
 
