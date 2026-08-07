@@ -809,6 +809,8 @@ function openSitePanel() {
       if (p && c.sites?.[s.name]?.password) p.value = c.sites[s.name].password;
       if (ck && c.sites?.[s.name]?.cookie) ck.value = c.sites[s.name].cookie;
     }
+    const qk = $("site-qwen-key") as HTMLInputElement;
+    if (qk && c.ai_keys?.["千问"]) qk.value = c.ai_keys["千问"];
   });
   $("site-panel").classList.remove("hidden");
 }
@@ -834,6 +836,11 @@ async function browserLoginSite(name: string) {
 
 async function saveSiteCookies() {
   const cfg = await getConfig();
+  // 千问 API Key
+  const qk = ($("site-qwen-key") as HTMLInputElement).value.trim();
+  if (qk) {
+    cfg.ai_keys = { ...(cfg.ai_keys ?? {}), 千问: qk };
+  }
   const sites = { ...(cfg.sites ?? {}) };
   for (const s of SALES_SITES) {
     const u = document.querySelector<HTMLInputElement>(`.site-user[data-site="${s.name}"]`)?.value.trim() ?? "";
@@ -873,6 +880,8 @@ function initSales() {
   $("rank-list").addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest("#rank-config")) openSitePanel();
   });
+  // 双击「自定义工作区」标题打开 Cookie 配置
+  document.querySelector(".workspace-card .card-title")?.addEventListener("dblclick", () => openSitePanel());
   $("recharge-close").addEventListener("click", () => $("recharge-panel").classList.add("hidden"));
   $("recharge-panel").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) $("recharge-panel").classList.add("hidden");
