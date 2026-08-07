@@ -1,0 +1,16 @@
+{
+  "city": "常州市·武进区·湖塘镇",
+  "lat": 31.7332,
+  "lon": 119.9649,
+  "ai_url": "https://www.qianwen.com/",
+  "off_time": "18:00",
+  "apps": [],
+  "ai_keys": {
+    "千问": "sk-ws-H.ERLIPPE.3sJt.MEYCIQC2VF7fu2ZmXi6m-PEpV0sLtId4cfYL7o5GIeiAG2SMVwIhAL5hP59inbQDpqLUXW84eLywmw7_nHSKM4Q11npk6YET"
+  },
+  "ai_models": {
+    "千问": "qwen-plus"
+  },
+  "sites": {},
+  "monitored_nicks": []
+}

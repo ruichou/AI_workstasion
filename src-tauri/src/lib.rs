@@ -163,6 +163,18 @@ fn load_config(app: &AppHandle) -> Config {
             Config::default()
         }),
         Err(_) => {
+            // 首次启动：尝试从安装包资源读取预置配置（含预置 API Key，不含账号密码）
+            let bundled = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|d| d.join("config.json"))
+                .and_then(|p| fs::read_to_string(p).ok())
+                .and_then(|raw| serde_json::from_str::<Config>(&raw).ok());
+            if let Some(cfg) = bundled {
+                fs::write(&path, serde_json::to_string_pretty(&cfg).unwrap()).ok();
+                return cfg;
+            }
             fs::write(&path, serde_json::to_string_pretty(&Config::default()).unwrap()).ok();
             Config::default()
         }
