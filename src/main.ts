@@ -343,10 +343,12 @@ interface SalesData {
 }
 
 let autoLoginAt = 0;
+let autoLoginFailAt = 0;
 
 async function autoRelogin(sites: string[]) {
   if (!sites.length) return;
   if (Date.now() - autoLoginAt < 5 * 60 * 1000) return;
+  if (Date.now() - autoLoginFailAt < 60 * 1000) return;
   let ok = false;
   for (const s of sites) {
     try {
@@ -357,7 +359,11 @@ async function autoRelogin(sites: string[]) {
       console.error(`自动登录 ${s} 失败:`, e);
     }
   }
-  if (ok) autoLoginAt = Date.now();
+  if (ok) {
+    autoLoginAt = Date.now();
+  } else {
+    autoLoginFailAt = Date.now();
+  }
   void refreshSales();
 }
 
@@ -734,7 +740,6 @@ async function refreshSales() {
       if (!data.ok) {
         const list = $("rank-list");
         list.innerHTML = `<div class="rank-empty"><div>${esc(data.msg)}</div><button id="rank-config" class="ws-btn">配置 Cookie</button></div>`;
-        $("rank-config").addEventListener("click", () => openSitePanel());
         return;
       }
     }
@@ -849,6 +854,10 @@ async function saveSiteCookies() {
 function initSales() {
   void refreshSales();
   ($("rank-refresh") as HTMLButtonElement).addEventListener("click", () => void refreshSales());
+  // 配置 Cookie 按钮（事件委托，防止列表重建导致事件丢失）
+  $("rank-list").addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest("#rank-config")) openSitePanel();
+  });
   $("recharge-close").addEventListener("click", () => $("recharge-panel").classList.add("hidden"));
   $("recharge-panel").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) $("recharge-panel").classList.add("hidden");
