@@ -143,6 +143,10 @@
         <section class="card workspace-card">
           <div class="card-head" data-tauri-drag-region>
             <span class="card-title">自定义工作区</span>
+            <div class="ws-monitor">
+              <input id="monitor-input" class="ws-monitor-input" placeholder="输入微信昵称" spellcheck="false" />
+              <button id="monitor-add" class="ws-monitor-btn" title="加入后台新关注监控，查询到在屏幕左下角提醒">帮我盯着TA有没有关注</button>
+            </div>
           </div>
           <div class="ws-grid">
             <div class="ws-slot ws-slot-rank">
@@ -165,7 +169,12 @@
               </div>
               <div id="usage-list" class="usage-list"></div>
             </div>
-            <div class="ws-slot"></div>
+            <div class="ws-slot ws-slot-after">
+              <div class="ws-head" data-tauri-drag-region>
+                <span class="ws-title">售后记录</span>
+              </div>
+              <div id="after-list" class="after-list"></div>
+            </div>
           </div>
         </section>
 
@@ -253,6 +262,16 @@
       <div id="toast" class="toast hidden"></div>
       <div id="alert-pop" class="alert-pop hidden"></div>
       <div id="notice-pop" class="notice-pop hidden"></div>
+      <div id="usage-pop" class="corner-pop hidden"></div>
+      <div id="view-pop" class="center-pop hidden"></div>
+      <div id="firework" class="firework hidden">
+        <canvas id="fw-canvas" class="fw-canvas"></canvas>
+        <div class="fw-box">
+          <div class="fw-emoji">🎉</div>
+          <div id="fw-msg" class="fw-msg"></div>
+          <div class="fw-hint">点击任意位置关闭</div>
+        </div>
+      </div>
     </div>
 
     <div id="app-picker" class="app-picker hidden">

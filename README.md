@@ -78,6 +78,16 @@ iwr "https://github.com/ruichou/AI_workstasion/releases/latest/download/GlassWor
 
 - `GlassWorkspace_x64-setup.exe` —— NSIS 安装版，装完有开始菜单快捷方式
 
+### 系统要求
+
+- Windows 10 / 11（64 位）
+- 无需安装任何运行时（.NET / Java / Python / Node 都不需要）
+- 基于微软 WebView2（随 Edge 浏览器预装，覆盖 99%+ Windows 设备）；极少数未安装的机器安装包会引导自动下载
+
+### 方式二：安装版
+
+- `GlassWorkspace_x64-setup.exe` —— NSIS 安装版，装完有开始菜单快捷方式
+
 ### 方式三：从源码构建
 
 > 需要 [Rust](https://www.rust-lang.org/tools/install)（1.97+）与 [Node.js](https://nodejs.org/)（18+）

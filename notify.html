@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Microsoft YaHei UI", system-ui, sans-serif;
+      }
+      html,
+      body {
+        background: transparent;
+        overflow: hidden;
+      }
+      #card {
+        margin: 6px;
+        background: rgba(16, 20, 34, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        padding: 12px 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+        cursor: pointer;
+        user-select: none;
+      }
+      #title {
+        font-size: 14px;
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 8px;
+      }
+      #lines {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #d6dbe6;
+        line-height: 1.5;
+        min-width: 0;
+      }
+      .line .txt {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      .avatar-empty {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: rgba(139, 92, 246, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .line b {
+        color: #7dd3fc;
+        font-weight: 600;
+      }
+      .line .sub {
+        color: #9aa3b5;
+        font-size: 11px;
+      }
+      #hint {
+        margin-top: 8px;
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="card">
+      <div id="title">通知</div>
+      <div id="lines"></div>
+      <div id="hint">点击关闭</div>
+    </div>
+    <script>
+      window.__setNotify = function (data) {
+        document.getElementById("title").textContent = data.title || "通知";
+        const box = document.getElementById("lines");
+        box.innerHTML = "";
+        const lines = data.lines || [];
+        const avatars = data.avatars || [];
+        for (let i = 0; i < lines.length && i < 8; i++) {
+          const el = document.createElement("div");
+          el.className = "line";
+          const av = avatars[i];
+          if (av) {
+            const img = document.createElement("img");
+            img.className = "avatar";
+            img.src = av;
+            el.appendChild(img);
+          } else {
+            const d = document.createElement("span");
+            d.className = "avatar-empty";
+            d.textContent = "👤";
+            el.appendChild(d);
+          }
+          const txt = document.createElement("span");
+          txt.className = "txt";
+          txt.textContent = lines[i];
+          el.appendChild(txt);
+          box.appendChild(el);
+        }
+      };
+      if (window.__pendingNotify) {
+        window.__setNotify(window.__pendingNotify);
+        window.__pendingNotify = null;
+      }
+      document.getElementById("card").addEventListener("click", () => {
+        try {
+          window.close();
+        } catch (e) {}
+      });
+    </script>
+  </body>
+</html>

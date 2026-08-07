@@ -45,6 +45,7 @@ interface Config {
   ai_keys: Record<string, string>;
   ai_models: Record<string, string>;
   sites: Record<string, { base_url: string; cookie: string; username: string; password: string }>;
+  monitored_nicks: string[];
 }
 
 interface Todo {
@@ -54,6 +55,15 @@ interface Todo {
 }
 
 const $ = (id: string) => document.getElementById(id)!;
+
+function esc(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -327,6 +337,8 @@ interface SalesData {
   leaderboard: { rank: number; name: string; amount: number; group: string; follow: number }[];
   recharge: Record<string, { customer: string; time: string; amount: number; avatar: string; site: string; note: string }[]>;
   usage: { time: string; nickname: string; avatar: string; remain: number; used: number; title: string; site: string }[];
+  views: { time: string; nickname: string; avatar: string; title: string; remain: number; site: string }[];
+  new_follows: { nick: string; site: string; avatar: string }[];
   failed_sites: string[];
 }
 
@@ -335,15 +347,17 @@ let autoLoginAt = 0;
 async function autoRelogin(sites: string[]) {
   if (!sites.length) return;
   if (Date.now() - autoLoginAt < 5 * 60 * 1000) return;
-  autoLoginAt = Date.now();
+  let ok = false;
   for (const s of sites) {
     try {
       await invoke<string>("auto_login_site", { site: s });
       toast(`${s} Cookie 已自动续期`);
+      ok = true;
     } catch (e) {
       console.error(`自动登录 ${s} 失败:`, e);
     }
   }
+  if (ok) autoLoginAt = Date.now();
   void refreshSales();
 }
 
@@ -385,13 +399,13 @@ async function renderRankList(data: SalesData) {
       row.addEventListener("click", () => showRecharge(item.name));
     }
     row.innerHTML = `
-      <span class="rank-no">${item.rank}</span>
-      <span class="rank-name">${displayName}</span>
-      <span class="rank-follow">关注 ${item.follow}</span>
-      <span class="rank-amt">${item.amount.toLocaleString()}</span>`;
+      <span class="rank-no">${esc(item.rank)}</span>
+      <span class="rank-name">${esc(displayName)}</span>
+      <span class="rank-follow">关注 ${esc(item.follow)}</span>
+      <span class="rank-amt">${esc(item.amount?.toLocaleString() ?? "")}</span>`;
     list.appendChild(row);
   }
-  $("rank-updated").textContent = data.updated_at ? `更新于 ${data.updated_at.slice(11, 16)}` : "";
+  $("rank-updated").textContent = `更新于 ${new Date().toTimeString().slice(0, 5)}（本地时间）`;
 }
 
 function renderMeData(data: SalesData) {
@@ -443,6 +457,8 @@ function renderMeData(data: SalesData) {
 }
 
 let lastRankSnapshot: Record<string, number> | null = null;
+let lastUsageSnapshot: Set<string> | null = null;
+let lastViewSnapshot: Set<string> | null = null;
 
 function checkRankArrivals(data: SalesData) {
   if (!data.ok) return;
@@ -456,6 +472,7 @@ function checkRankArrivals(data: SalesData) {
         const diff = nw - old;
         const msg = `${name} 到账 +${diff.toLocaleString()} 元`;
         if (name === salesLoginPerson) {
+          launchFirework(`💰 ${msg}`);
           showAlertRight(`🎉 ${msg}`);
         } else {
           toast(`💰 ${msg}`);
@@ -464,6 +481,44 @@ function checkRankArrivals(data: SalesData) {
     }
   }
   lastRankSnapshot = cur;
+}
+
+function checkUsageArrivals(data: SalesData) {
+  const items = data.usage ?? [];
+  const cur = new Set(items.map((u) => `${u.site}|${u.nickname}|${u.time}`));
+  const prev = lastUsageSnapshot;
+  if (prev) {
+    const fresh = items.filter((u) => !prev.has(`${u.site}|${u.nickname}|${u.time}`));
+    if (fresh.length) {
+      invoke("show_screen_notify", {
+        pos: "right",
+        title: `📥 新的积分使用记录（${fresh.length} 条）`,
+        lines: fresh.slice(0, 8).map((u) => `${u.nickname} 用了 ${u.used} 积分 · 剩余 ${u.remain}${u.title ? ` ｜ 接了：${u.title}` : ""}`),
+        avatars: fresh.slice(0, 8).map((u) => u.avatar),
+        seconds: 15,
+      }).catch(() => {});
+    }
+  }
+  lastUsageSnapshot = cur;
+}
+
+function checkViewArrivals(data: SalesData) {
+  const items = data.views ?? [];
+  const cur = new Set(items.map((v) => `${v.site}|${v.nickname}|${v.time}`));
+  const prev = lastViewSnapshot;
+  if (prev) {
+    const fresh = items.filter((v) => !prev.has(`${v.site}|${v.nickname}|${v.time}`));
+    if (fresh.length) {
+      invoke("show_screen_notify", {
+        pos: "top",
+        title: `👀 新的查看记录（${fresh.length} 条）`,
+        lines: fresh.slice(0, 8).map((v) => `${v.nickname} ${v.time.slice(11)} ｜ ${v.title || "—"} · 剩余 ${v.remain}分`),
+        avatars: fresh.slice(0, 8).map((v) => v.avatar),
+        seconds: 10,
+      }).catch(() => {});
+    }
+  }
+  lastViewSnapshot = cur;
 }
 
 function shortSite(site: string): string {
@@ -494,6 +549,7 @@ interface AfterSale {
   title: string;
   used: number;
   remain: number;
+  avatar: string;
   notified: { h24: boolean; h36: boolean; h42: boolean; expired: boolean };
 }
 
@@ -529,9 +585,10 @@ function triggerAfterSale(u: { nickname: string; time: string; site: string; tit
     list.splice(idx, 1);
     saveAfterSales(list);
     btn.classList.remove("active", "expired");
+    renderAfterList();
     toast(`已取消「${u.nickname}」的售后提醒`);
     return;
-  }
+  } 
   list.push({
     nickname: u.nickname,
     usage_time: u.time,
@@ -539,10 +596,12 @@ function triggerAfterSale(u: { nickname: string; time: string; site: string; tit
     title: u.title,
     used: u.used,
     remain: u.remain,
+    avatar: (u as { avatar?: string }).avatar ?? "",
     notified: { h24: false, h36: false, h42: false, expired: false },
   });
   saveAfterSales(list);
   btn.classList.add("active");
+  renderAfterList();
   const remainH = Math.max(0, (usageTs(u.time) + 24 * 3600000 - Date.now()) / 3600000);
   toast(`售后提醒已开启：「${u.nickname}」距离提交还剩 ${remainH >= 1 ? `${remainH.toFixed(1)} 小时` : `${Math.max(0, Math.round(remainH * 60))} 分钟`}`);
 }
@@ -584,6 +643,59 @@ function afterSaleState(u: { nickname: string; time: string }): "none" | "active
   return r.notified.expired ? "expired" : "active";
 }
 
+function fmtRemainH(h: number): string {
+  if (h <= 0) return "0分钟";
+  const hh = Math.floor(h);
+  const mm = Math.floor((h - hh) * 60);
+  return hh > 0 ? `${hh}小时${mm}分` : `${mm}分钟`;
+}
+
+function renderAfterList() {
+  const list = $("after-list");
+  const items = loadAfterSales();
+  if (!items.length) {
+    list.innerHTML = `<div class="rank-empty">暂无售后记录<br/>点「使用情况」里的售后按钮添加</div>`;
+    return;
+  }
+  const now = Date.now();
+  list.innerHTML = items
+    .map((r, idx) => {
+      const usedH = (now - usageTs(r.usage_time)) / 3600000;
+      const left = 48 - usedH;
+      let status: string;
+      let cls: string;
+      if (left <= 0) {
+        status = "已过期";
+        cls = "expired";
+      } else if (usedH >= 24) {
+        status = `剩余 ${fmtRemainH(left)} · 可提交`;
+        cls = "ready";
+      } else {
+        status = `剩余 ${fmtRemainH(left)}`;
+        cls = "waiting";
+      }
+      return `<div class="after-row ${cls}">
+        <div class="after-main">
+          <div class="after-nick">${esc(r.nickname)}</div>
+          ${r.title ? `<div class="after-title">${esc(r.title)}</div>` : ""}
+          <div class="after-sub"><span class="after-status ${cls}">${status}</span> ${esc((r.usage_time ?? "").slice(5, 16))} 使用 · ${esc(r.site)}</div>
+        </div>
+        <button class="after-done" data-idx="${idx}" title="标记已完成">已提交</button>
+      </div>`;
+    })
+    .join("");
+}
+
+function markAfterDone(idx: number) {
+  const list = loadAfterSales();
+  if (idx < 0 || idx >= list.length) return;
+  const name = list[idx].nickname;
+  list.splice(idx, 1);
+  saveAfterSales(list);
+  renderAfterList();
+  toast(`「${name}」售后已提交完成`);
+}
+
 function renderUsage(data: SalesData) {
   const list = $("usage-list");
   if (!data.ok) {
@@ -598,18 +710,22 @@ function renderUsage(data: SalesData) {
   list.innerHTML = items
     .map(
       (u) => `<div class="usage-row">
-        ${u.avatar ? `<img class="usage-avatar" src="${u.avatar}" alt="" />` : `<span class="usage-avatar usage-avatar-empty">👤</span>`}
+        ${u.avatar ? `<img class="usage-avatar" src="${esc(u.avatar)}" alt="" />` : `<span class="usage-avatar usage-avatar-empty">👤</span>`}
         <div class="usage-main">
-          <div class="usage-top"><span class="usage-nick">${u.nickname}</span><span class="usage-used">-${u.used}</span><span class="usage-remain">余${u.remain}</span></div>
-          <div class="usage-sub">${u.time.slice(5, 16)}${u.title ? ` · ${u.title}` : ""}</div>
+          <div class="usage-top"><span class="usage-nick">${esc(u.nickname)}</span><span class="usage-used">-${esc(u.used)}</span><span class="usage-remain">余${esc(u.remain)}</span></div>
+          <div class="usage-sub">${esc((u.time ?? "").slice(5, 16))}${u.title ? ` · ${esc(u.title)}` : ""}</div>
         </div>
-        <button class="usage-after ${afterSaleState(u)}" data-nick="${u.nickname.replace(/"/g, "&quot;")}" data-time="${u.time}" data-site="${u.site}" data-used="${u.used}" data-remain="${u.remain}" data-title="${u.title.replace(/"/g, "&quot;")}">售后</button>
+        <button class="usage-after ${afterSaleState(u)}" data-nick="${esc(u.nickname)}" data-time="${esc(u.time)}" data-site="${esc(u.site)}" data-used="${esc(u.used)}" data-remain="${esc(u.remain)}" data-avatar="${esc(u.avatar)}" data-title="${esc(u.title)}">售后</button>
       </div>`,
     )
     .join("");
 }
 
+let salesInflight = false;
+
 async function refreshSales() {
+  if (salesInflight) return;
+  salesInflight = true;
   try {
     const data = await invoke<SalesData>("fetch_sales_data");
     const failed = data.failed_sites ?? [];
@@ -617,7 +733,7 @@ async function refreshSales() {
       void autoRelogin(failed);
       if (!data.ok) {
         const list = $("rank-list");
-        list.innerHTML = `<div class="rank-empty"><div>${data.msg}</div><button id="rank-config" class="ws-btn">配置 Cookie</button></div>`;
+        list.innerHTML = `<div class="rank-empty"><div>${esc(data.msg)}</div><button id="rank-config" class="ws-btn">配置 Cookie</button></div>`;
         $("rank-config").addEventListener("click", () => openSitePanel());
         return;
       }
@@ -625,12 +741,17 @@ async function refreshSales() {
     salesRecharge = data.recharge ?? {};
     salesLoginPerson = data.login_person ?? "";
     checkRankArrivals(data);
+    checkUsageArrivals(data);
+    checkViewArrivals(data);
+    checkNewFollows(data);
     renderRankList(data);
     renderMeData(data);
     renderUsage(data);
   } catch (e) {
     const list = $("rank-list");
-    list.innerHTML = `<div class="rank-empty"><div>获取失败：${String(e)}</div></div>`;
+    list.innerHTML = `<div class="rank-empty"><div>获取失败：${esc(String(e))}</div></div>`;
+  } finally {
+    salesInflight = false;
   }
 }
 
@@ -644,12 +765,12 @@ function showRecharge(name: string) {
     list.innerHTML = recs
       .map(
         (r) => `<div class="rec-row">
-          ${r.avatar ? `<img class="rec-avatar" src="${r.avatar}" alt="" />` : `<span class="rec-avatar rec-avatar-empty">👤</span>`}
-          <span class="rec-customer">${r.customer}</span>
-          <span class="rec-note">${r.note}</span>
-          <span class="rec-time">${r.time}</span>
-          <span class="rec-amt">${r.amount.toLocaleString()}元</span>
-          <span class="rec-site">${r.site}</span>
+          ${r.avatar ? `<img class="rec-avatar" src="${esc(r.avatar)}" alt="" />` : `<span class="rec-avatar rec-avatar-empty">👤</span>`}
+          <span class="rec-customer">${esc(r.customer)}</span>
+          <span class="rec-note">${esc(r.note)}</span>
+          <span class="rec-time">${esc(r.time)}</span>
+          <span class="rec-amt">${esc(r.amount?.toLocaleString() ?? "")}元</span>
+          <span class="rec-site">${esc(r.site)}</span>
         </div>`,
       )
       .join("");
@@ -694,7 +815,7 @@ async function browserLoginSite(name: string) {
   toast(`已打开 ${name} 登录页，请在弹出的浏览器中登录`);
   try {
     const cookie = await invoke<string>("auto_login_site", { site: name });
-    const input = document.querySelector<HTMLInputElement>(`.site-input[data-site="${name}"]`);
+    const input = document.querySelector<HTMLInputElement>(`.site-input[data-site="${name}"]:not(.site-user):not(.site-pass)`);
     if (input) input.value = cookie;
     toast(`${name} 登录成功，Cookie 已自动保存`);
     void refreshSales();
@@ -757,11 +878,37 @@ function initSales() {
       btn,
     );
   });
+  // 售后记录「已提交」按钮
+  $("after-list").addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".after-done");
+    if (!btn) return;
+    markAfterDone(Number(btn.dataset.idx ?? -1));
+  });
+  renderAfterList();
+  ($("monitor-add") as HTMLButtonElement).addEventListener("click", () => void addMonitorNick());
+  ($("monitor-input") as HTMLInputElement).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void addMonitorNick();
+  });
   setInterval(() => void refreshSales(), 60000);
   checkAfterSales();
-  setInterval(checkAfterSales, 30000);
+  setInterval(() => {
+    checkAfterSales();
+    renderAfterList();
+  }, 30000);
   $("alert-pop").addEventListener("click", () => $("alert-pop").classList.add("hidden"));
   $("notice-pop").addEventListener("click", () => $("notice-pop").classList.add("hidden"));
+  $("usage-pop").addEventListener("click", () => {
+    $("usage-pop").classList.add("hidden");
+    clearTimeout(usagePopTimer);
+  });
+  $("view-pop").addEventListener("click", () => {
+    $("view-pop").classList.add("hidden");
+    clearTimeout(viewPopTimer);
+  });
+  $("firework").addEventListener("click", closeFirework);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFirework();
+  });
 }
 
 // ---------- 一键清理 ----------
@@ -931,7 +1078,10 @@ function renderCalendar() {
 function loadTodos(): Todo[] {
   try {
     const raw = localStorage.getItem("todos");
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
   } catch {
     /* ignore */
   }
@@ -1075,7 +1225,7 @@ async function getConfig(): Promise<Config> {
   try {
     return await invoke<Config>("get_config");
   } catch {
-    return { city: "", lat: null, lon: null, ai_url: "", off_time: "18:00", apps: [], ai_keys: {}, ai_models: {}, sites: {} };
+    return { city: "", lat: null, lon: null, ai_url: "", off_time: "18:00", apps: [], ai_keys: {}, ai_models: {}, sites: {}, monitored_nicks: [] };
   }
 }
 
@@ -1447,6 +1597,183 @@ function toast(msg: string) {
 
 // ---------- AI API 直答 ----------
 import { Channel } from "@tauri-apps/api/core";
+
+// ---------- 新关注监控 ----------
+const MONITOR_KEY = "monitor-notified";
+
+function loadMonitorNotified(): Set<string> {
+  try {
+    const raw = localStorage.getItem(MONITOR_KEY);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {
+    /* ignore */
+  }
+  return new Set();
+}
+
+function saveMonitorNotified(s: Set<string>) {
+  localStorage.setItem(MONITOR_KEY, JSON.stringify([...s]));
+}
+
+function checkNewFollows(data: SalesData) {
+  const matches = data.new_follows ?? [];
+  if (!matches.length) return;
+  const notified = loadMonitorNotified();
+  const fresh = matches.filter((m) => !notified.has(`${m.nick}|${m.site}`));
+  if (!fresh.length) return;
+  for (const m of fresh) notified.add(`${m.nick}|${m.site}`);
+  saveMonitorNotified(notified);
+  invoke("show_screen_notify", {
+    pos: "left",
+    title: `🔔 新关注提醒！${fresh.length > 1 ? `（${fresh.length} 个）` : ""}`,
+    lines: fresh.map((m) => `匹配到微信昵称：${m.nick}（${m.site}）`),
+    avatars: fresh.map((m) => m.avatar),
+    seconds: 0,
+  }).catch(() => {});
+}
+
+async function addMonitorNick() {
+  const input = $("monitor-input") as HTMLInputElement;
+  const nick = input.value.trim();
+  if (!nick) {
+    toast("请输入微信昵称");
+    return;
+  }
+  const cfg = await getConfig();
+  const list = cfg.monitored_nicks ?? [];
+  if (list.includes(nick)) {
+    toast(`「${nick}」已在监控列表中`);
+    return;
+  }
+  cfg.monitored_nicks = [...list, nick];
+  await persistConfig(cfg);
+  input.value = "";
+  toast(`✅ 已加入新关注监控：「${nick}」\n查询到会在屏幕左下角提醒`);
+}
+
+// ---------- 全屏烟花通知 ----------
+let fwRaf = 0;
+let fwTimer = 0;
+
+function launchFirework(msg: string) {
+  const layer = $("firework");
+  const canvas = $("fw-canvas") as HTMLCanvasElement;
+  $("fw-msg").textContent = msg;
+  layer.classList.remove("hidden");
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const COLORS = ["#d4898a", "#d4a87a", "#e8b87a", "#ffee58", "#8aaa8a", "#8ab4d4", "#448aff", "#f50057", "#ff6e40", "#76ff03", "#18ffff", "#ff80ab", "#ff5252", "#69f0ae"];
+  interface P { x: number; y: number; vx: number; vy: number; color: string; life: number; maxLife: number; size: number }
+  interface R { x: number; y: number; ty: number; color: string; alive: boolean }
+  let particles: P[] = [];
+  let rockets: R[] = [];
+  const explode = (x: number, y: number, color: string) => {
+    const n = 60 + Math.floor(Math.random() * 60);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1 + Math.random() * 7;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, color: Math.random() > 0.3 ? color : COLORS[Math.floor(Math.random() * COLORS.length)], life: 40 + Math.random() * 60, maxLife: 100, size: 1.5 + Math.random() * 2.5 });
+    }
+  };
+  const spawnRocket = () => {
+    rockets.push({ x: Math.random() * W, y: H + 10, ty: H * 0.18 + Math.random() * H * 0.35, color: COLORS[Math.floor(Math.random() * COLORS.length)], alive: true });
+  };
+  for (let i = 0; i < 3; i++) spawnRocket();
+  let t = 0;
+  const tick = () => {
+    t++;
+    ctx.clearRect(0, 0, W, H);
+    for (const r of rockets) {
+      r.y -= 9;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(r.x - 1.5, r.y, 3, 12);
+      if (r.y <= r.ty) {
+        explode(r.x, r.y, r.color);
+        r.alive = false;
+      }
+    }
+    rockets = rockets.filter((r) => r.alive);
+    for (const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.05;
+      p.life--;
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    particles = particles.filter((p) => p.life > 0);
+    if (t % 25 === 0 && rockets.length < 4) spawnRocket();
+    if (t < 400) {
+      fwRaf = requestAnimationFrame(tick);
+    } else {
+      closeFirework();
+    }
+  };
+  cancelAnimationFrame(fwRaf);
+  tick();
+  clearTimeout(fwTimer);
+  fwTimer = window.setTimeout(closeFirework, 15000);
+}
+
+function closeFirework() {
+  cancelAnimationFrame(fwRaf);
+  $("firework").classList.add("hidden");
+}
+
+// ---------- 右上角弹窗（新的积分使用，15s 自动关） ----------
+let usagePopTimer = 0;
+
+function showUsagePop(records: { nickname: string; used: number; remain: number; title: string; site: string; avatar: string }[]) {
+  const el = $("usage-pop");
+  el.innerHTML = `<div class="cp-title">📥 新的积分使用记录！</div>
+    ${records
+      .slice(0, 5)
+      .map(
+        (r) => `<div class="cp-row">
+          ${r.avatar ? `<img class="cp-avatar" src="${r.avatar}" alt="" />` : ""}
+          <span class="cp-nick">${r.nickname}</span>
+          <span class="cp-info">用了 ${r.used} · 余 ${r.remain}</span>
+        </div><div class="cp-row" style="border-top:none;padding-top:0;font-size:10.5px;color:var(--text-2)">接了：${r.title || "—"}</div>`,
+      )
+      .join("")}
+    <div class="cp-hint">点击关闭</div>`;
+  el.classList.remove("hidden");
+  clearTimeout(usagePopTimer);
+  usagePopTimer = window.setTimeout(() => el.classList.add("hidden"), 15000);
+}
+
+// ---------- 屏幕中央弹窗（新的查看记录，10s 自动关） ----------
+let viewPopTimer = 0;
+
+function showViewPop(records: { nickname: string; time: string; title: string; remain: number; site: string; avatar: string }[]) {
+  const el = $("view-pop");
+  el.innerHTML = `<div class="vp-title">👀 新的查看记录</div>
+    ${records
+      .slice(0, 10)
+      .map(
+        (r) => `<div class="vp-row">
+          <div class="vp-top">
+            ${r.avatar ? `<img class="vp-avatar" src="${r.avatar}" alt="" />` : ""}
+            <span class="vp-nick">${r.nickname}</span>
+            <span class="vp-time">${r.time.slice(11)}</span>
+          </div>
+          <div class="vp-title-text">${r.title || "—"}</div>
+          <div class="vp-remain">剩余积分：${r.remain}分</div>
+        </div>`,
+      )
+      .join("")}
+    ${records.length > 10 ? `<div class="vp-more">…还有 ${records.length - 10} 条</div>` : ""}
+    <div class="vp-hint">点击关闭</div>`;
+  el.classList.remove("hidden");
+  clearTimeout(viewPopTimer);
+  viewPopTimer = window.setTimeout(() => el.classList.add("hidden"), 10000);
+}
 
 const AI_GUIDES: Record<
   string,
@@ -1965,8 +2292,7 @@ function initAi() {
       void sendAiChat();
     }
   });
-  ($("ai-chat-input") as HTMLTextAreaElement).addEventListener("paste", handlePasteImage);
-  $("ai-panel").addEventListener("paste", handlePasteImage);
+  ($("ai-panel") as HTMLElement).addEventListener("paste", handlePasteImage);
   $("ai-panel").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeAiPanel();
   });
@@ -2753,14 +3079,20 @@ function initParticles() {
 
 // ---------- init ----------
 function init() {
-  fmtClock();
-  renderCalendar();
-  renderTodos();
-  renderTools();
-  refreshApps();
-  refreshSys();
-  refreshTemps();
-  refreshWeather();
+  if ((window as unknown as { __gwInit?: boolean }).__gwInit) return;
+  (window as unknown as { __gwInit?: boolean }).__gwInit = true;
+  try {
+    fmtClock();
+    renderCalendar();
+    renderTodos();
+    renderTools();
+    refreshApps();
+    refreshSys();
+    refreshTemps();
+    refreshWeather();
+  } catch (e) {
+    console.error("init basic failed:", e);
+  }
   for (const fn of [
     initSettings,
     initClean,

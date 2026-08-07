@@ -46,6 +46,7 @@ struct Config {
     ai_keys: std::collections::HashMap<String, String>,
     ai_models: std::collections::HashMap<String, String>,
     sites: std::collections::HashMap<String, SiteCfg>,
+    monitored_nicks: Vec<String>,
 }
 
 impl Default for Config {
@@ -78,6 +79,7 @@ impl Default for Config {
             ai_keys: std::collections::HashMap::new(),
             ai_models: std::collections::HashMap::new(),
             sites: std::collections::HashMap::new(),
+            monitored_nicks: Vec::new(),
         }
     }
 }
@@ -1351,6 +1353,23 @@ struct UsageItem {
     site: String,
 }
 
+#[derive(Serialize, Clone)]
+struct ViewItem {
+    time: String,
+    nickname: String,
+    avatar: String,
+    title: String,
+    remain: u64,
+    site: String,
+}
+
+#[derive(Serialize, Clone)]
+struct NewFollow {
+    nick: String,
+    site: String,
+    avatar: String,
+}
+
 #[derive(Serialize)]
 struct SalesData {
     ok: bool,
@@ -1370,6 +1389,8 @@ struct SalesData {
     leaderboard: Vec<RankItem>,
     recharge: std::collections::HashMap<String, Vec<RechargeRecord>>,
     usage: Vec<UsageItem>,
+    views: Vec<ViewItem>,
+    new_follows: Vec<NewFollow>,
     failed_sites: Vec<String>,
 }
 
@@ -1451,6 +1472,9 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
     let mut monthly_new_follow = 0u32;
     let mut recharge_by_person: std::collections::HashMap<String, Vec<RechargeRecord>> = std::collections::HashMap::new();
     let mut usage_all: Vec<UsageItem> = Vec::new();
+    let mut views_all: Vec<ViewItem> = Vec::new();
+    let mut new_follows_all: Vec<NewFollow> = Vec::new();
+    let monitored: Vec<String> = cfg.monitored_nicks.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     let mut name_amounts: std::collections::HashMap<String, (u64, String, u32, u32)> = std::collections::HashMap::new();
     let mut any_ok = false;
     let mut failed_sites: Vec<String> = Vec::new();
@@ -1534,7 +1558,7 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
             }
         }
 
-        // 今日过商机人数
+        // 今日过商机人数 + 查看记录
         if let Ok(r2) = client
             .get(format!("{base}/asysmanager/xs_chakan_list.php?lm=tj&erlm=yckuser&page=1"))
             .header("User-Agent", SALES_UA)
@@ -1545,6 +1569,58 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
                 if let Ok(t2) = r2.text().await {
                     if let Some(m) = Regex::new(r#"jrck3.*?\.html\(\W+(\d+)"#).ok().and_then(|re| re.captures(&t2)) {
                         shangji_total += m.get(1).map(|x| x.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
+                    }
+                    // 查看记录（两种列格式自动适配，只保留今天的）
+                    let today_prefix = chrono_now_str()[..10].to_string();
+                    let rows: Vec<String> = Regex::new(r"(?s)<tr[^>]*><td[^>]*>.*?</td>.*?</tr>")
+                        .ok()
+                        .map(|re| re.captures_iter(&t2).map(|c| c.get(0).map(|x| x.as_str().to_string()).unwrap_or_default()).collect())
+                        .unwrap_or_default();
+                    for row in rows {
+                        let tds: Vec<String> = Regex::new(r"(?s)<td[^>]*>(.*?)</td>")
+                            .ok().unwrap()
+                            .captures_iter(&row)
+                            .map(|c| c.get(1).map(|x| x.as_str().to_string()).unwrap_or_default())
+                            .collect();
+                        if tds.len() >= 11 {
+                            // 序号|来源|时间|内容|头像|昵称|手机号|地区|类目|分配人|剩余积分
+                            let time = html_clean(&tds[2]);
+                            if !time.starts_with(&today_prefix) {
+                                continue;
+                            }
+                            let avatar = Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
+                                .and_then(|re| re.captures(&tds[4]))
+                                .and_then(|m| m.get(1))
+                                .map(|x| x.as_str().to_string())
+                                .unwrap_or_default();
+                            views_all.push(ViewItem {
+                                time,
+                                nickname: html_clean(&tds[5]),
+                                avatar,
+                                title: html_clean(&tds[3]),
+                                remain: tds[10].trim().parse::<u64>().unwrap_or(0),
+                                site: name.to_string(),
+                            });
+                        } else if tds.len() >= 9 {
+                            // 序号|时间|内容|头像|昵称|地区|类目|分配人|剩余积分
+                            let time = html_clean(&tds[1]);
+                            if !time.starts_with(&today_prefix) {
+                                continue;
+                            }
+                            let avatar = Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
+                                .and_then(|re| re.captures(&tds[3]))
+                                .and_then(|m| m.get(1))
+                                .map(|x| x.as_str().to_string())
+                                .unwrap_or_default();
+                            views_all.push(ViewItem {
+                                time,
+                                nickname: html_clean(&tds[4]),
+                                avatar,
+                                title: html_clean(&tds[2]),
+                                remain: tds[8].trim().parse::<u64>().unwrap_or(0),
+                                site: name.to_string(),
+                            });
+                        }
                     }
                 }
             }
@@ -1642,6 +1718,48 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
                                         note,
                                     });
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 新关注监控：扫描新用户认领页面，匹配监控昵称（td[1]=头像, td[2]=昵称）
+        if !monitored.is_empty() {
+            if let Ok(rn) = client
+                .get(format!("{base}/asysmanager/xs_user_newuserrl.php?lm=us&erlm=xyhrl"))
+                .header("User-Agent", SALES_UA)
+                .header("Cookie", format!("PHPSESSID={cookie}"))
+                .send().await
+            {
+                if rn.status() == reqwest::StatusCode::OK {
+                    if let Ok(tn) = rn.text().await {
+                        if let Ok(re_rows) = Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>") {
+                            for row in re_rows.captures_iter(&tn) {
+                                let body = row.get(1).map(|x| x.as_str()).unwrap_or("");
+                                let tds: Vec<String> = Regex::new(r"(?s)<td[^>]*>(.*?)</td>")
+                                    .ok().unwrap()
+                                    .captures_iter(body)
+                                    .map(|c| c.get(1).map(|x| x.as_str()).unwrap_or("").to_string())
+                                    .collect();
+                                if tds.len() < 3 {
+                                    continue;
+                                }
+                                let nick_clean = html_clean(&tds[2]);
+                                if nick_clean.is_empty() || !monitored.contains(&nick_clean) {
+                                    continue;
+                                }
+                                let avatar = Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
+                                    .and_then(|re| re.captures(&tds[1]))
+                                    .and_then(|m| m.get(1))
+                                    .map(|x| x.as_str().to_string())
+                                    .unwrap_or_default();
+                                new_follows_all.push(NewFollow {
+                                    nick: nick_clean,
+                                    site: name.to_string(),
+                                    avatar,
+                                });
                             }
                         }
                     }
@@ -1747,6 +1865,8 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
             leaderboard: vec![],
             recharge: std::collections::HashMap::new(),
             usage: vec![],
+            views: vec![],
+            new_follows: vec![],
             failed_sites,
         });
     }
@@ -1802,6 +1922,8 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
         leaderboard,
         recharge: recharge_by_person,
         usage: usage_all,
+        views: views_all,
+        new_follows: new_follows_all,
         failed_sites,
     })
 }
@@ -2075,6 +2197,95 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
         last_err = String::from("登录成功但未捕获到 Cookie");
     }
     Err(format!("自动登录失败（{last_err}）"))
+}
+
+// ---------- 屏幕级通知窗口（正上方 / 右上方） ----------
+static NOTIFY_WIN: OnceLock<std::sync::Mutex<Option<tauri::WebviewWindow>>> = OnceLock::new();
+
+/// 在电脑屏幕的指定位置弹出独立置顶通知（不依赖主窗口位置）
+#[tauri::command]
+async fn show_screen_notify(app: AppHandle, pos: String, title: String, lines: Vec<String>, avatars: Option<Vec<String>>, seconds: u64) -> Result<(), String> {
+    use tauri::WebviewUrl;
+    let holder = NOTIFY_WIN.get_or_init(|| std::sync::Mutex::new(None));
+    let win = {
+        let mut guard = holder.lock().unwrap();
+        if let Some(w) = guard.as_ref() {
+            w.clone()
+        } else {
+            let w = tauri::WebviewWindowBuilder::new(&app, "notify-win", WebviewUrl::App("notify.html".into()))
+                .title("通知")
+                .inner_size(380.0, 240.0)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .shadow(false)
+                .build()
+                .map_err(|e| e.to_string())?;
+            *guard = Some(w.clone());
+            w
+        }
+    };
+
+    let (mw, mh) = match win.current_monitor() {
+        Ok(Some(m)) => {
+            let sz = m.size();
+            (sz.width as f64, sz.height as f64)
+        }
+        _ => (1920.0, 1080.0),
+    };
+    let (ww, wh) = win.outer_size().map(|s| (s.width as f64, s.height as f64)).unwrap_or((380.0, 240.0));
+    let (x, y) = if pos == "right" {
+        (mw - ww - 24.0, 40.0)
+    } else if pos == "left" {
+        (24.0, mh - wh - 60.0)
+    } else {
+        ((mw - ww) / 2.0, 30.0)
+    };
+    win.set_position(tauri::PhysicalPosition::new(x as i32, y as i32))
+        .map_err(|e| e.to_string())?;
+
+    let data = serde_json::json!({ "title": title, "lines": lines, "avatars": avatars.unwrap_or_default() });
+    let js = format!("window.__setNotify ? window.__setNotify({}) : (window.__pendingNotify = {});", data.to_string(), data.to_string());
+    // 先显示窗口，再注入内容（首次创建时页面可能未加载，eval 失败不中断）
+    win.show().map_err(|e| e.to_string())?;
+    let mut evaled = false;
+    for _ in 0..10 {
+        if win.eval(&js).is_ok() {
+            evaled = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    if !evaled {
+        let _ = win.eval(&js);
+    }
+    // 强制置顶到所有置顶窗口之上（主窗口也是置顶，Win32 直接提升 z 序，不抢焦点）
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        };
+        let hwnd = win.hwnd();
+        unsafe {
+            if let Ok(h) = hwnd {
+                let _ = SetWindowPos(h, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+    }
+    let _ = win.set_always_on_top(true);
+
+    // seconds <= 0 表示不自动消失（只能点击关闭）
+    if seconds > 0 {
+        let w2 = win.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(seconds.max(3))).await;
+            let _ = w2.hide();
+        });
+    }
+    Ok(())
 }
 
 fn urlencode(s: &str) -> String {
@@ -2453,6 +2664,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(AppState::new())
         .setup(|app| {
             let cfg = load_config(&app.handle());
@@ -2494,7 +2706,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
+                if window.label() == "main" || window.label() == "notify-win" {
                     api.prevent_close();
                     let _ = window.hide();
                 }
@@ -2526,7 +2738,8 @@ pub fn run() {
             ask_ai,
             open_external,
             fetch_sales_data,
-            auto_login_site
+            auto_login_site,
+            show_screen_notify
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
