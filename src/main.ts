@@ -44,6 +44,7 @@ interface Config {
   apps: AppItem[];
   ai_keys: Record<string, string>;
   ai_models: Record<string, string>;
+  sites: Record<string, { base_url: string; cookie: string; username: string; password: string }>;
 }
 
 interface Todo {
@@ -305,6 +306,462 @@ async function refreshTemps() {
   } catch {
     /* ignore */
   }
+}
+
+// ---------- 销售数据（排行榜 + 个人数据） ----------
+interface SalesData {
+  ok: boolean;
+  msg: string;
+  login_person: string;
+  self_recharge: number;
+  left_recharge: number;
+  pre_recharge: number;
+  today_follow: number;
+  today_consume: number;
+  shangji_count: number;
+  monthly_self: number;
+  monthly_left: number;
+  monthly_pre: number;
+  monthly_new_follow: number;
+  updated_at: string;
+  leaderboard: { rank: number; name: string; amount: number; group: string; follow: number }[];
+  recharge: Record<string, { customer: string; time: string; amount: number; avatar: string; site: string; note: string }[]>;
+  usage: { time: string; nickname: string; avatar: string; remain: number; used: number; title: string; site: string }[];
+  failed_sites: string[];
+}
+
+let autoLoginAt = 0;
+
+async function autoRelogin(sites: string[]) {
+  if (!sites.length) return;
+  if (Date.now() - autoLoginAt < 5 * 60 * 1000) return;
+  autoLoginAt = Date.now();
+  for (const s of sites) {
+    try {
+      await invoke<string>("auto_login_site", { site: s });
+      toast(`${s} Cookie 已自动续期`);
+    } catch (e) {
+      console.error(`自动登录 ${s} 失败:`, e);
+    }
+  }
+  void refreshSales();
+}
+
+let salesRecharge: SalesData["recharge"] = {};
+let salesLoginPerson = "";
+
+const SALES_SITES = [
+  { name: "生意能手", base_url: "https://syzl.zhuanhua6.com" },
+  { name: "来接生意", base_url: "https://ljsy.jywlkj.com" },
+];
+
+async function renderRankList(data: SalesData) {
+  const list = $("rank-list");
+  list.innerHTML = "";
+  if (!data.ok) {
+    list.innerHTML = `<div class="rank-empty"><div>${data.msg}</div><button id="rank-config" class="ws-btn">配置 Cookie</button></div>`;
+    $("rank-config").addEventListener("click", () => openSitePanel());
+    return;
+  }
+  if (!data.leaderboard.length) {
+    list.innerHTML = `<div class="rank-empty">暂无排行数据</div>`;
+    return;
+  }
+  let lastGroup = "";
+  for (const item of data.leaderboard) {
+    if (item.group !== lastGroup) {
+      lastGroup = item.group;
+      const g = document.createElement("div");
+      g.className = "rank-group";
+      g.textContent = item.group === "谨言" ? "—— 谨言（楼下）——" : "—— 转化率（楼上）——";
+      list.appendChild(g);
+    }
+    const isMe = item.name === salesLoginPerson;
+    const displayName = Array.from(item.name).length === 2 ? Array.from(item.name).join("\u3000") : item.name;
+    const row = document.createElement("div");
+    row.className = `rank-row${item.rank <= 3 ? ` top${item.rank}` : ""}${isMe ? " me" : ""}`;
+    if (isMe) {
+      row.title = "点击查看本月充值明细";
+      row.addEventListener("click", () => showRecharge(item.name));
+    }
+    row.innerHTML = `
+      <span class="rank-no">${item.rank}</span>
+      <span class="rank-name">${displayName}</span>
+      <span class="rank-follow">关注 ${item.follow}</span>
+      <span class="rank-amt">${item.amount.toLocaleString()}</span>`;
+    list.appendChild(row);
+  }
+  $("rank-updated").textContent = data.updated_at ? `更新于 ${data.updated_at.slice(11, 16)}` : "";
+}
+
+function renderMeData(data: SalesData) {
+  const box = $("me-data");
+  if (!data.ok) {
+    box.innerHTML = `<div class="rank-empty">${data.msg}</div>`;
+    return;
+  }
+  ($("me-title") as HTMLElement).textContent = data.login_person ? `${data.login_person} · 个人数据` : "个人数据";
+  const zh = data.leaderboard.filter((x) => x.group !== "谨言").reduce((s, x) => s + x.amount, 0);
+  const jy = data.leaderboard.filter((x) => x.group === "谨言").reduce((s, x) => s + x.amount, 0);
+  const monthTotal = data.monthly_self + data.monthly_left + data.monthly_pre;
+  const groups: { title: string; items: { label: string; value: number }[] }[] = [
+    {
+      title: "今日",
+      items: [
+        { label: "自己充值", value: data.self_recharge },
+        { label: "离职分配", value: data.left_recharge },
+        { label: "预分配", value: data.pre_recharge },
+        { label: "今日关注", value: data.today_follow },
+        { label: "今日消费", value: data.today_consume },
+        { label: "过商机", value: data.shangji_count },
+      ],
+    },
+    {
+      title: "本月",
+      items: [
+        { label: "本月自己", value: data.monthly_self },
+        { label: "本月离职", value: data.monthly_left },
+        { label: "本月预分", value: data.monthly_pre },
+        { label: "本月关注", value: data.monthly_new_follow },
+        { label: "本月合计", value: monthTotal },
+      ],
+    },
+    {
+      title: "到账",
+      items: [
+        { label: "转化率到账", value: zh },
+        { label: "谨言到账", value: jy },
+        { label: "合计到账", value: zh + jy },
+      ],
+    },
+  ];
+  const cell = (it: { label: string; value: number }) =>
+    `<div class="me-cell"><div class="me-val">${it.value.toLocaleString()}</div><div class="me-label">${it.label}</div></div>`;
+  box.innerHTML = groups
+    .map((g) => `<div class="me-group">${g.title}</div>${g.items.map(cell).join("")}`)
+    .join("");
+}
+
+let lastRankSnapshot: Record<string, number> | null = null;
+
+function checkRankArrivals(data: SalesData) {
+  if (!data.ok) return;
+  const cur: Record<string, number> = {};
+  for (const it of data.leaderboard) cur[it.name] = it.amount;
+  if (lastRankSnapshot) {
+    for (const name in cur) {
+      const old = lastRankSnapshot[name] ?? 0;
+      const nw = cur[name];
+      if (nw > old) {
+        const diff = nw - old;
+        const msg = `${name} 到账 +${diff.toLocaleString()} 元`;
+        if (name === salesLoginPerson) {
+          showAlertRight(`🎉 ${msg}`);
+        } else {
+          toast(`💰 ${msg}`);
+        }
+      }
+    }
+  }
+  lastRankSnapshot = cur;
+}
+
+function shortSite(site: string): string {
+  if (site.includes("生意")) return "能手";
+  if (site.includes("来接")) return "接生";
+  return site.length > 2 ? site.slice(0, 2) : site;
+}
+
+function showAlertLeft(msg: string) {
+  const el = $("alert-pop");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+function showAlertRight(msg: string) {
+  const el = $("notice-pop");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+
+// ---------- 售后提醒 ----------
+const AFTER_KEY = "after-sales";
+
+interface AfterSale {
+  nickname: string;
+  usage_time: string;
+  site: string;
+  title: string;
+  used: number;
+  remain: number;
+  notified: { h24: boolean; h36: boolean; h42: boolean; expired: boolean };
+}
+
+function loadAfterSales(): AfterSale[] {
+  try {
+    const raw = localStorage.getItem(AFTER_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function saveAfterSales(list: AfterSale[]) {
+  if (list.length > 200) list.splice(0, list.length - 200);
+  localStorage.setItem(AFTER_KEY, JSON.stringify(list));
+}
+
+function usageTs(time: string): number {
+  const t = new Date(time.replace(" ", "T"));
+  return Number.isFinite(t.getTime()) ? t.getTime() : Date.now();
+}
+
+function triggerAfterSale(u: { nickname: string; time: string; site: string; title: string; used: number; remain: number }, btn: HTMLElement) {
+  const list = loadAfterSales();
+  const existing = list.find((x) => x.nickname === u.nickname && x.usage_time === u.time);
+  if (existing) {
+    // 已开启 → 取消提醒
+    const idx = list.indexOf(existing);
+    list.splice(idx, 1);
+    saveAfterSales(list);
+    btn.classList.remove("active", "expired");
+    toast(`已取消「${u.nickname}」的售后提醒`);
+    return;
+  }
+  list.push({
+    nickname: u.nickname,
+    usage_time: u.time,
+    site: u.site,
+    title: u.title,
+    used: u.used,
+    remain: u.remain,
+    notified: { h24: false, h36: false, h42: false, expired: false },
+  });
+  saveAfterSales(list);
+  btn.classList.add("active");
+  const remainH = Math.max(0, (usageTs(u.time) + 24 * 3600000 - Date.now()) / 3600000);
+  toast(`售后提醒已开启：「${u.nickname}」距离提交还剩 ${remainH >= 1 ? `${remainH.toFixed(1)} 小时` : `${Math.max(0, Math.round(remainH * 60))} 分钟`}`);
+}
+
+function checkAfterSales() {
+  const list = loadAfterSales();
+  if (!list.length) return;
+  const now = Date.now();
+  let changed = false;
+  for (const r of list) {
+    const h = (now - usageTs(r.usage_time)) / 3600000;
+    if (!r.notified.h24 && h >= 24) {
+      r.notified.h24 = true;
+      changed = true;
+      showAlertLeft(`🔔 「${r.nickname}」售后可以提交了！（已满 24 小时）`);
+    }
+    if (!r.notified.h36 && h >= 36) {
+      r.notified.h36 = true;
+      changed = true;
+      showAlertLeft(`⏰ 「${r.nickname}」售后还剩 12 小时`);
+    }
+    if (!r.notified.h42 && h >= 42) {
+      r.notified.h42 = true;
+      changed = true;
+      showAlertLeft(`⏰ 「${r.nickname}」售后还剩 6 小时`);
+    }
+    if (!r.notified.expired && h >= 48) {
+      r.notified.expired = true;
+      changed = true;
+      showAlertLeft(`⚠️ 「${r.nickname}」售后已过期（超过 48 小时）`);
+    }
+  }
+  if (changed) saveAfterSales(list);
+}
+
+function afterSaleState(u: { nickname: string; time: string }): "none" | "active" | "expired" {
+  const r = loadAfterSales().find((x) => x.nickname === u.nickname && x.usage_time === u.time);
+  if (!r) return "none";
+  return r.notified.expired ? "expired" : "active";
+}
+
+function renderUsage(data: SalesData) {
+  const list = $("usage-list");
+  if (!data.ok) {
+    list.innerHTML = `<div class="rank-empty">${data.msg}</div>`;
+    return;
+  }
+  const items = [...(data.usage ?? [])].sort((a, b) => (a.time < b.time ? 1 : -1)).slice(0, 30);
+  if (!items.length) {
+    list.innerHTML = `<div class="rank-empty">暂无使用记录</div>`;
+    return;
+  }
+  list.innerHTML = items
+    .map(
+      (u) => `<div class="usage-row">
+        ${u.avatar ? `<img class="usage-avatar" src="${u.avatar}" alt="" />` : `<span class="usage-avatar usage-avatar-empty">👤</span>`}
+        <div class="usage-main">
+          <div class="usage-top"><span class="usage-nick">${u.nickname}</span><span class="usage-used">-${u.used}</span><span class="usage-remain">余${u.remain}</span></div>
+          <div class="usage-sub">${u.time.slice(5, 16)}${u.title ? ` · ${u.title}` : ""}</div>
+        </div>
+        <button class="usage-after ${afterSaleState(u)}" data-nick="${u.nickname.replace(/"/g, "&quot;")}" data-time="${u.time}" data-site="${u.site}" data-used="${u.used}" data-remain="${u.remain}" data-title="${u.title.replace(/"/g, "&quot;")}">售后</button>
+      </div>`,
+    )
+    .join("");
+}
+
+async function refreshSales() {
+  try {
+    const data = await invoke<SalesData>("fetch_sales_data");
+    const failed = data.failed_sites ?? [];
+    if (failed.length) {
+      void autoRelogin(failed);
+      if (!data.ok) {
+        const list = $("rank-list");
+        list.innerHTML = `<div class="rank-empty"><div>${data.msg}</div><button id="rank-config" class="ws-btn">配置 Cookie</button></div>`;
+        $("rank-config").addEventListener("click", () => openSitePanel());
+        return;
+      }
+    }
+    salesRecharge = data.recharge ?? {};
+    salesLoginPerson = data.login_person ?? "";
+    checkRankArrivals(data);
+    renderRankList(data);
+    renderMeData(data);
+    renderUsage(data);
+  } catch (e) {
+    const list = $("rank-list");
+    list.innerHTML = `<div class="rank-empty"><div>获取失败：${String(e)}</div></div>`;
+  }
+}
+
+function showRecharge(name: string) {
+  const recs = salesRecharge[name] ?? [];
+  ($("recharge-title") as HTMLElement).textContent = `${name} · 今日充值明细（${recs.length} 笔）`;
+  const list = $("recharge-list");
+  if (!recs.length) {
+    list.innerHTML = `<div class="rank-empty">今日暂无充值记录</div>`;
+  } else {
+    list.innerHTML = recs
+      .map(
+        (r) => `<div class="rec-row">
+          ${r.avatar ? `<img class="rec-avatar" src="${r.avatar}" alt="" />` : `<span class="rec-avatar rec-avatar-empty">👤</span>`}
+          <span class="rec-customer">${r.customer}</span>
+          <span class="rec-note">${r.note}</span>
+          <span class="rec-time">${r.time}</span>
+          <span class="rec-amt">${r.amount.toLocaleString()}元</span>
+          <span class="rec-site">${r.site}</span>
+        </div>`,
+      )
+      .join("");
+  }
+  $("recharge-panel").classList.remove("hidden");
+}
+
+function openSitePanel() {
+  const box = $("site-list");
+  box.innerHTML = "";
+  for (const s of SALES_SITES) {
+    const row = document.createElement("div");
+    row.className = "site-row";
+    row.innerHTML = `
+      <span class="site-name">${s.name}</span>
+      <div class="site-fields">
+        <input class="site-input site-user" data-site="${s.name}" placeholder="账号" spellcheck="false" />
+        <input class="site-input site-pass" data-site="${s.name}" type="password" placeholder="密码" spellcheck="false" />
+        <input class="site-input" data-site="${s.name}" placeholder="PHPSESSID（可留空）" spellcheck="false" />
+      </div>
+      <button class="site-login" data-site="${s.name}">🌐 自动登录</button>`;
+    box.appendChild(row);
+  }
+  void getConfig().then((c) => {
+    for (const s of SALES_SITES) {
+      const u = box.querySelector<HTMLInputElement>(`.site-user[data-site="${s.name}"]`);
+      const p = box.querySelector<HTMLInputElement>(`.site-pass[data-site="${s.name}"]`);
+      const ck = box.querySelector<HTMLInputElement>(`.site-input[data-site="${s.name}"]:not(.site-user):not(.site-pass)`);
+      if (u && c.sites?.[s.name]?.username) u.value = c.sites[s.name].username;
+      if (p && c.sites?.[s.name]?.password) p.value = c.sites[s.name].password;
+      if (ck && c.sites?.[s.name]?.cookie) ck.value = c.sites[s.name].cookie;
+    }
+  });
+  $("site-panel").classList.remove("hidden");
+}
+
+async function browserLoginSite(name: string) {
+  const btn = document.querySelector<HTMLButtonElement>(`.site-login[data-site="${name}"]`);
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = "等待登录中…";
+  toast(`已打开 ${name} 登录页，请在弹出的浏览器中登录`);
+  try {
+    const cookie = await invoke<string>("auto_login_site", { site: name });
+    const input = document.querySelector<HTMLInputElement>(`.site-input[data-site="${name}"]`);
+    if (input) input.value = cookie;
+    toast(`${name} 登录成功，Cookie 已自动保存`);
+    void refreshSales();
+  } catch (e) {
+    toast(`${name} 登录失败：${String(e)}`);
+  }
+  btn.disabled = false;
+  btn.textContent = "🌐 浏览器登录";
+}
+
+async function saveSiteCookies() {
+  const cfg = await getConfig();
+  const sites = { ...(cfg.sites ?? {}) };
+  for (const s of SALES_SITES) {
+    const u = document.querySelector<HTMLInputElement>(`.site-user[data-site="${s.name}"]`)?.value.trim() ?? "";
+    const p = document.querySelector<HTMLInputElement>(`.site-pass[data-site="${s.name}"]`)?.value.trim() ?? "";
+    const ck = document.querySelector<HTMLInputElement>(`.site-input[data-site="${s.name}"]:not(.site-user):not(.site-pass)`)?.value.trim() ?? "";
+    const cur = sites[s.name] ?? { base_url: s.base_url, cookie: "", username: "", password: "" };
+    if (u) cur.username = u;
+    if (p) cur.password = p;
+    if (ck) cur.cookie = ck;
+    sites[s.name] = cur;
+  }
+  cfg.sites = sites;
+  await persistConfig(cfg);
+  $("site-panel").classList.add("hidden");
+  toast("已保存");
+  void refreshSales();
+}
+
+function initSales() {
+  void refreshSales();
+  ($("rank-refresh") as HTMLButtonElement).addEventListener("click", () => void refreshSales());
+  $("recharge-close").addEventListener("click", () => $("recharge-panel").classList.add("hidden"));
+  $("recharge-panel").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("recharge-panel").classList.add("hidden");
+  });
+  $("site-close").addEventListener("click", () => $("site-panel").classList.add("hidden"));
+  $("site-save").addEventListener("click", () => void saveSiteCookies());
+  $("site-panel").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) $("site-panel").classList.add("hidden");
+  });
+  $("site-list").addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".site-login");
+    if (btn) void browserLoginSite(btn.dataset.site ?? "");
+  });
+  // 售后按钮（事件委托）
+  $("usage-list").addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".usage-after");
+    if (!btn) return;
+    triggerAfterSale(
+      {
+        nickname: btn.dataset.nick ?? "",
+        time: btn.dataset.time ?? "",
+        site: btn.dataset.site ?? "",
+        title: btn.dataset.title ?? "",
+        used: Number(btn.dataset.used ?? 0),
+        remain: Number(btn.dataset.remain ?? 0),
+      },
+      btn,
+    );
+  });
+  setInterval(() => void refreshSales(), 60000);
+  checkAfterSales();
+  setInterval(checkAfterSales, 30000);
+  $("alert-pop").addEventListener("click", () => $("alert-pop").classList.add("hidden"));
+  $("notice-pop").addEventListener("click", () => $("notice-pop").classList.add("hidden"));
 }
 
 // ---------- 一键清理 ----------
@@ -618,7 +1075,7 @@ async function getConfig(): Promise<Config> {
   try {
     return await invoke<Config>("get_config");
   } catch {
-    return { city: "", lat: null, lon: null, ai_url: "", off_time: "18:00", apps: [], ai_keys: {}, ai_models: {} };
+    return { city: "", lat: null, lon: null, ai_url: "", off_time: "18:00", apps: [], ai_keys: {}, ai_models: {}, sites: {} };
   }
 }
 
@@ -2307,6 +2764,7 @@ function init() {
   for (const fn of [
     initSettings,
     initClean,
+    initSales,
     initCollapse,
     initAi,
     initWindow,

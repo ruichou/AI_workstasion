@@ -144,6 +144,29 @@
           <div class="card-head" data-tauri-drag-region>
             <span class="card-title">自定义工作区</span>
           </div>
+          <div class="ws-grid">
+            <div class="ws-slot ws-slot-rank">
+              <div class="ws-head" data-tauri-drag-region>
+                <span class="ws-title">排行榜</span>
+                <button id="rank-refresh" class="ws-refresh" title="刷新">↻</button>
+              </div>
+              <div id="rank-list" class="rank-list"></div>
+              <div class="ws-foot" id="rank-updated"></div>
+            </div>
+            <div class="ws-slot ws-slot-me">
+              <div class="ws-head" data-tauri-drag-region>
+                <span class="ws-title" id="me-title">个人数据</span>
+              </div>
+              <div id="me-data" class="me-data"></div>
+            </div>
+            <div class="ws-slot ws-slot-usage">
+              <div class="ws-head" data-tauri-drag-region>
+                <span class="ws-title">使用情况</span>
+              </div>
+              <div id="usage-list" class="usage-list"></div>
+            </div>
+            <div class="ws-slot"></div>
+          </div>
         </section>
 
         <!-- 行 2 中列：快捷工具 + 系统设置 -->
@@ -228,6 +251,8 @@
         <span id="mini-date" class="mini-date">----年--月--日</span>
       </div>
       <div id="toast" class="toast hidden"></div>
+      <div id="alert-pop" class="alert-pop hidden"></div>
+      <div id="notice-pop" class="notice-pop hidden"></div>
     </div>
 
     <div id="app-picker" class="app-picker hidden">
@@ -318,6 +343,29 @@
           <input id="ai-model-custom" class="picker-search ai-model-custom hidden" placeholder="输入自定义模型名" spellcheck="false" />
         </div>
         <button id="ai-key-save" class="ai-send ai-key-save">保存并开始对话</button>
+      </div>
+    </div>
+
+    <div id="site-panel" class="app-picker hidden">
+      <div class="picker-box site-panel-box">
+        <div class="picker-head">
+          <span class="picker-title">站点 Cookie 配置</span>
+          <button id="site-close" class="picker-close">✕</button>
+        </div>
+        <div id="site-list" class="site-list"></div>
+        <div class="picker-foot">
+          <button id="site-save" class="text-btn">✓ 保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="recharge-panel" class="app-picker hidden">
+      <div class="picker-box recharge-box">
+        <div class="picker-head">
+          <span class="picker-title" id="recharge-title">充值明细</span>
+          <button id="recharge-close" class="picker-close">✕</button>
+        </div>
+        <div id="recharge-list" class="recharge-list"></div>
       </div>
     </div>
 

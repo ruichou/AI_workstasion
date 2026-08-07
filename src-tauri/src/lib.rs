@@ -26,6 +26,14 @@ impl Default for AppItem {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct SiteCfg {
+    base_url: String,
+    cookie: String,
+    username: String,
+    password: String,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(default)]
 struct Config {
@@ -37,6 +45,7 @@ struct Config {
     apps: Vec<AppItem>,
     ai_keys: std::collections::HashMap<String, String>,
     ai_models: std::collections::HashMap<String, String>,
+    sites: std::collections::HashMap<String, SiteCfg>,
 }
 
 impl Default for Config {
@@ -68,6 +77,7 @@ impl Default for Config {
             ],
             ai_keys: std::collections::HashMap::new(),
             ai_models: std::collections::HashMap::new(),
+            sites: std::collections::HashMap::new(),
         }
     }
 }
@@ -945,24 +955,34 @@ fn edge_path() -> Option<PathBuf> {
     .find(|p| p.exists())
 }
 
-fn launch_ai_edge() -> Result<(), String> {
+fn launch_ai_edge(headless: bool) -> Result<(), String> {
     let Some(edge) = edge_path() else {
         return Err(String::from("未找到 Microsoft Edge"));
     };
     let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| String::from("."));
     let profile = format!(r"{local}\glassworkspace\edge-ai");
-    std::process::Command::new(edge)
-        .args([
-            format!("--remote-debugging-port={CDP_PORT}"),
-            format!("--user-data-dir={profile}"),
-            String::from("--window-size=1000,720"),
-            String::from("--no-first-run"),
-            String::from("--no-default-browser-check"),
-            String::from("--restore-last-session"),
-        ])
-        .spawn()
-        .map_err(|e| format!("启动 Edge 失败: {e}"))?;
-    Ok(())
+    let mut args = vec![
+        format!("--remote-debugging-port={CDP_PORT}"),
+        format!("--user-data-dir={profile}"),
+        String::from("--window-size=1000,720"),
+        String::from("--no-first-run"),
+        String::from("--no-default-browser-check"),
+    ];
+    if !headless {
+        args.push(String::from("--restore-last-session"));
+    }
+    if headless {
+        args.push(String::from("--headless=new"));
+    }
+    let mut last_err = String::new();
+    for _ in 0..3 {
+        match std::process::Command::new(&edge).args(&args).spawn() {
+            Ok(_) => return Ok(()),
+            Err(e) => last_err = format!("启动 Edge 失败: {e}"),
+        }
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    Err(last_err)
 }
 
 async fn cdp_ready(client: &reqwest::Client) -> bool {
@@ -1041,7 +1061,7 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
 
     let client = reqwest::Client::new();
     if !cdp_ready(&client).await {
-        launch_ai_edge()?;
+        launch_ai_edge(false)?;
         if !cdp_ready(&client).await {
             return Err(String::from("浏览器启动超时"));
         }
@@ -1287,6 +1307,776 @@ fn open_external(url: String) -> Result<(), String> {
     Ok(())
 }
 
+// ---------- 销售数据抓取（生意能手 / 来接生意） ----------
+const SALES_SITES: &[(&str, &str)] = &[
+    ("生意能手", "https://syzl.zhuanhua6.com"),
+    ("来接生意", "https://ljsy.jywlkj.com"),
+];
+
+const SALES_TARGET: &str = "/asysmanager/xs_jifen_xiaoshou_gr.php?lm=jf&erlm=xstj";
+const SALES_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
+const SALES_LOGIN: &[(&str, &str)] = &[
+    ("生意能手", "https://syzl.zhuanhua6.com/asysmanager/control_loginxnew0416.php?dlcs=5f8d2a9c7e1b3064258f0d71a9c2e5b46801f3d9c5a7e2b04681f9d3c7a5e2b0"),
+    ("来接生意", "https://ljsy.jywlkj.com/asysmanager/control_loginlnew1358.php?dlcs=5f8d2a9c7e1b3064253f0d71a9c2e5326801f3d1c4a7e2b04681f1d3c7a5e2b0"),
+];
+
+#[derive(Serialize, Clone)]
+struct RankItem {
+    rank: u32,
+    name: String,
+    amount: u64,
+    group: String,
+    follow: u32,
+}
+
+#[derive(Serialize, Clone)]
+struct RechargeRecord {
+    customer: String,
+    time: String,
+    amount: u64,
+    avatar: String,
+    site: String,
+    note: String,
+}
+
+#[derive(Serialize, Clone)]
+struct UsageItem {
+    time: String,
+    nickname: String,
+    avatar: String,
+    remain: u64,
+    used: u64,
+    title: String,
+    site: String,
+}
+
+#[derive(Serialize)]
+struct SalesData {
+    ok: bool,
+    msg: String,
+    login_person: String,
+    self_recharge: u64,
+    left_recharge: u64,
+    pre_recharge: u64,
+    today_follow: u32,
+    today_consume: u64,
+    shangji_count: u32,
+    monthly_self: u64,
+    monthly_left: u64,
+    monthly_pre: u64,
+    monthly_new_follow: u32,
+    updated_at: String,
+    leaderboard: Vec<RankItem>,
+    recharge: std::collections::HashMap<String, Vec<RechargeRecord>>,
+    usage: Vec<UsageItem>,
+    failed_sites: Vec<String>,
+}
+
+/// 尝试从销售监控（D:\销售数据监控_本机）的 cookie 文件自动读取各站点 cookie
+fn auto_load_site_cookies(cfg_sites: &mut std::collections::HashMap<String, SiteCfg>) {
+    let dirs = [
+        String::from(r"D:\销售数据监控_本机\monitor_data\cookies"),
+        std::env::var("USERPROFILE").unwrap_or_default() + r"\销售数据监控\monitor_data\cookies",
+    ];
+    for dir in dirs {
+        let Ok(rd) = fs::read_dir(&dir) else { continue };
+        for f in rd.flatten() {
+            let p = f.path();
+            if p.extension().map(|e| e.to_string_lossy().to_lowercase() == "cookie").unwrap_or(false) {
+                let Ok(raw) = fs::read_to_string(&p) else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
+                let site = v.get("site").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                let cookie = v.get("cookie").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if !site.is_empty() && !cookie.is_empty() {
+                    let e = cfg_sites.entry(site.clone()).or_default();
+                    if e.cookie.is_empty() {
+                        e.cookie = cookie;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn chrono_now_str() -> String {
+    let now = std::time::SystemTime::now();
+    let secs = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+    let days = secs / 86400;
+    let (y, m, d) = civil_from_days(days as i64);
+    let h = (secs % 86400) / 3600;
+    let mi = (secs % 3600) / 60;
+    let s = secs % 60;
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, h, mi, s)
+}
+
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+fn html_clean(s: &str) -> String {
+    regex_lite::Regex::new(r"<[^>]+>")
+        .ok()
+        .map(|re| re.replace_all(s, "").to_string())
+        .unwrap_or_else(|| s.to_string())
+        .trim()
+        .to_string()
+}
+
+#[tauri::command]
+async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, String> {
+    use regex_lite::Regex;
+    let mut cfg = state.config.lock().unwrap().clone();
+    auto_load_site_cookies(&mut cfg.sites);
+
+    let mut login_person = String::new();
+    let mut self_r = 0u64;
+    let mut left_r = 0u64;
+    let mut pre_r = 0u64;
+    let mut follow_total = 0u32;
+    let mut consume_total = 0u64;
+    let mut shangji_total = 0u32;
+    let mut monthly_self = 0u64;
+    let mut monthly_left = 0u64;
+    let mut monthly_pre = 0u64;
+    let mut monthly_new_follow = 0u32;
+    let mut recharge_by_person: std::collections::HashMap<String, Vec<RechargeRecord>> = std::collections::HashMap::new();
+    let mut usage_all: Vec<UsageItem> = Vec::new();
+    let mut name_amounts: std::collections::HashMap<String, (u64, String, u32, u32)> = std::collections::HashMap::new();
+    let mut any_ok = false;
+    let mut failed_sites: Vec<String> = Vec::new();
+
+    for (name, base) in SALES_SITES {
+        let cookie = cfg
+            .sites
+            .get(*name)
+            .map(|s| s.cookie.trim().to_string())
+            .unwrap_or_default();
+        if cookie.is_empty() {
+            failed_sites.push(name.to_string());
+            continue;
+        }
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!("{base}{SALES_TARGET}"))
+            .header("User-Agent", SALES_UA)
+            .header("Cookie", format!("PHPSESSID={cookie}"))
+            .send()
+            .await
+            .map_err(|e| format!("请求 {name} 失败: {e}"))?;
+        if resp.status() != reqwest::StatusCode::OK {
+            failed_sites.push(name.to_string());
+            continue;
+        }
+        let html = resp.text().await.unwrap_or_default();
+        any_ok = true;
+
+        if let Some(m) = Regex::new(r#"([\u4e00-\u9fa5]{2,4})<br>\s*<a\s+href=['"]control_loginout"#).ok().and_then(|re| re.captures(&html)) {
+            if login_person.is_empty() {
+                login_person = m.get(1).map(|x| x.as_str().to_string()).unwrap_or_default();
+            }
+        }
+        let grab = |pat: &str| -> u64 {
+            Regex::new(pat).ok()
+                .and_then(|re| re.captures(&html))
+                .and_then(|m| m.get(1))
+                .and_then(|x| x.as_str().parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        self_r += grab(r##"\$\("#allczjf"\)\.html\("(\d+)"\)"##);
+        left_r += grab(r##"\$\("#allczjf_lzfp"\)\.html\("(\d+)"\)"##);
+        pre_r += grab(r##"\$\("#allczjf_yfp"\)\.html\("(\d+)"\)"##);
+
+        if let (Ok(re), Ok(re_group)) = (
+            Regex::new(r">(\d+)&nbsp;([\u4e00-\u9fa5]{2,4})<br>今日充值[：:](\d*)</div>"),
+            Regex::new(r"([\u4e00-\u9fa5]{2,4})：<br><a[^>]*>今日新增关注</a>[：:]*<font[^>]*>(\d+)</font>"),
+        ) {
+            let zh_pos = html.find("转化率：<br>今日合计");
+            let jy_pos = html.find("谨言：<br>今日合计");
+            let mut parse_zone = |start: usize, end: usize, group: &str| {
+                let seg = &html[start.min(html.len())..end.min(html.len())];
+                for cap in re.captures_iter(seg) {
+                    let name_s = cap.get(2).map(|x| x.as_str().to_string()).unwrap_or_default();
+                    if name_s.is_empty() { continue; }
+                    let amount = cap.get(3).map(|x| x.as_str()).unwrap_or("").parse::<u64>().unwrap_or(0);
+                    let rank = cap.get(1).map(|x| x.as_str()).unwrap_or("99").parse::<u32>().unwrap_or(99);
+                    let e = name_amounts.entry(name_s).or_insert((0, String::from(group), 99, 0));
+                    e.0 += amount;
+                    e.2 = e.2.min(rank);
+                }
+            };
+            match (zh_pos, jy_pos) {
+                (Some(z), Some(j)) => {
+                    parse_zone(z, j, "转化率");
+                    parse_zone(j, html.len(), "谨言");
+                }
+                (Some(z), None) => parse_zone(z, html.len(), "转化率"),
+                (None, Some(j)) => parse_zone(j, html.len(), "谨言"),
+                (None, None) => parse_zone(0, html.len(), "转化率"),
+            }
+            for cap in re_group.captures_iter(&html) {
+                let fname = cap.get(1).map(|x| x.as_str()).unwrap_or("");
+                let fnum = cap.get(2).map(|x| x.as_str()).unwrap_or("0").parse::<u32>().unwrap_or(0);
+                let e = name_amounts.entry(fname.to_string()).or_insert((0, String::from("转化率"), 99, 0));
+                e.3 += fnum;
+                if fname == login_person {
+                    follow_total += fnum;
+                }
+            }
+        }
+
+        // 今日过商机人数
+        if let Ok(r2) = client
+            .get(format!("{base}/asysmanager/xs_chakan_list.php?lm=tj&erlm=yckuser&page=1"))
+            .header("User-Agent", SALES_UA)
+            .header("Cookie", format!("PHPSESSID={cookie}"))
+            .send().await
+        {
+            if r2.status() == reqwest::StatusCode::OK {
+                if let Ok(t2) = r2.text().await {
+                    if let Some(m) = Regex::new(r#"jrck3.*?\.html\(\W+(\d+)"#).ok().and_then(|re| re.captures(&t2)) {
+                        shangji_total += m.get(1).map(|x| x.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
+                    }
+                }
+            }
+        }
+
+        // 本月统计：POST 同页面 + Time_select（本月1号 至 今天）
+        {
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            let days = secs / 86400;
+            let (y, m, d) = civil_from_days(days as i64);
+            let range = format!("{y}-{m}-1 0:0:0 到 {y}-{m}-{d} 0:0:0");
+            if let Ok(r4) = client
+                .post(format!("{base}{SALES_TARGET}"))
+                .header("User-Agent", SALES_UA)
+                .header("Cookie", format!("PHPSESSID={cookie}"))
+                .form(&[("Time_select", range)])
+                .send().await
+            {
+                if r4.status() == reqwest::StatusCode::OK {
+                    if let Ok(t4) = r4.text().await {
+                        let mgrab = |pat: &str| -> u64 {
+                            Regex::new(pat).ok()
+                                .and_then(|re| re.captures(&t4))
+                                .and_then(|c| c.get(1))
+                                .and_then(|x| x.as_str().parse::<u64>().ok())
+                                .unwrap_or(0)
+                        };
+                        monthly_self += mgrab(r##"allczjf.*?\.html\("(\d+)"##);
+                        monthly_left += mgrab(r##"allczjf_lzfp.*?\.html\("(\d+)"##);
+                        monthly_pre += mgrab(r##"allczjf_yfp.*?\.html\("(\d+)"##);
+                        if let Some(m) = Regex::new(r"新增关注正常使用用户数量[\s\S]*?(\d+)").ok().and_then(|re| re.captures(&t4)) {
+                            monthly_new_follow += m.get(1).map(|x| x.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 当日充值明细：POST 今日范围（GET 页面 tfoot 为空），仅保留登录人本人
+        if !login_person.is_empty() {
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+            let days = secs / 86400;
+            let (y, m, d) = civil_from_days(days as i64);
+            let next = civil_from_days(days as i64 + 1);
+            let range = format!("{y}-{m}-{d} 0:0:0 到 {}-{}-{} 0:0:0", next.0, next.1, next.2);
+            if let Ok(r5) = client
+                .post(format!("{base}{SALES_TARGET}"))
+                .header("User-Agent", SALES_UA)
+                .header("Cookie", format!("PHPSESSID={cookie}"))
+                .form(&[("Time_select", range)])
+                .send().await
+            {
+                if r5.status() == reqwest::StatusCode::OK {
+                    if let Ok(t5) = r5.text().await {
+                        if let Ok(re_tf) = Regex::new(r"(?s)<tfoot[^>]*>(.*?)</tfoot>") {
+                            for tf in re_tf.captures_iter(&t5) {
+                                let tfoot_content = tf.get(1).map(|x| x.as_str()).unwrap_or("");
+                                for row in Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>").ok().unwrap().captures_iter(tfoot_content) {
+                                    let row_content = row.get(1).map(|x| x.as_str()).unwrap_or("");
+                                    let tds: Vec<String> = Regex::new(r"(?s)<td[^>]*>(.*?)</td>")
+                                        .ok().unwrap()
+                                        .captures_iter(row_content)
+                                        .map(|c| c.get(1).map(|x| x.as_str()).unwrap_or("").to_string())
+                                        .collect();
+                                    if tds.len() < 7 {
+                                        continue;
+                                    }
+                                    let salesperson = html_clean(&tds[6]);
+                                    if salesperson != login_person {
+                                        continue;
+                                    }
+                                    let amount = Regex::new(r"(\d+)").ok()
+                                        .and_then(|re| re.captures(&tds[3]))
+                                        .and_then(|m| m.get(1))
+                                        .and_then(|x| x.as_str().parse::<u64>().ok())
+                                        .unwrap_or(0);
+                                    if amount == 0 {
+                                        continue;
+                                    }
+                                    let phone = html_clean(&tds[0]);
+                                    let company = html_clean(&tds[2]);
+                                    let avatar = Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
+                                        .and_then(|re| re.captures(&tds[1]))
+                                        .and_then(|m| m.get(1))
+                                        .map(|x| x.as_str().to_string())
+                                        .unwrap_or_default();
+                                    let note = if tds.len() > 7 { html_clean(&tds[7]) } else { String::new() };
+                                    let customer = if company.chars().count() > 4 { company } else { phone };
+                                    recharge_by_person.entry(salesperson).or_default().push(RechargeRecord {
+                                        customer,
+                                        time: html_clean(&tds[5]),
+                                        amount,
+                                        avatar,
+                                        site: name.to_string(),
+                                        note,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 今日消费 + 使用记录（积分使用情况）
+        if !login_person.is_empty() {
+            if let Ok(r3) = client
+                .get(format!("{base}/asysmanager/xs_jifen_syong.php?lm=jf&erlm=jfsy"))
+                .header("User-Agent", SALES_UA)
+                .header("Cookie", format!("PHPSESSID={cookie}"))
+                .send().await
+            {
+                if r3.status() == reqwest::StatusCode::OK {
+                    if let Ok(t3) = r3.text().await {
+                        let pat = format!(r#"\d+&nbsp;{}<br>今日消费[：:](\d*)"#, regex_lite::escape(&login_person));
+                        if let Some(m) = Regex::new(&pat).ok().and_then(|re| re.captures(&t3)) {
+                            consume_total += m.get(1).map(|x| x.as_str()).unwrap_or("").parse::<u64>().unwrap_or(0);
+                        }
+                        let av = |td: &str| -> String {
+                            Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
+                                .and_then(|re| re.captures(td))
+                                .and_then(|m| m.get(1))
+                                .map(|x| x.as_str().to_string())
+                                .unwrap_or_default()
+                        };
+                        let rows: Vec<String> = Regex::new(r"(?s)<tr><td>(\d+)</td>(.*?)</tr>")
+                            .ok()
+                            .map(|re| re.captures_iter(&t3).map(|c| c.get(2).map(|x| x.as_str().to_string()).unwrap_or_default()).collect())
+                            .unwrap_or_default();
+                        if t3.contains("赠送剩余积分") {
+                            for body in rows {
+                                let tds: Vec<String> = Regex::new(r"(?s)<td>(.*?)</td>")
+                                    .ok().unwrap()
+                                    .captures_iter(&body)
+                                    .map(|c| c.get(1).map(|x| x.as_str().to_string()).unwrap_or_default())
+                                    .collect();
+                                if tds.len() >= 12 {
+                                    let used = tds[8].trim().parse::<u64>().unwrap_or(0);
+                                    if used == 0 { continue; }
+                                    usage_all.push(UsageItem {
+                                        time: html_clean(&tds[0]),
+                                        nickname: html_clean(&tds[3]),
+                                        avatar: av(&tds[2]),
+                                        remain: tds[4].trim().parse::<u64>().unwrap_or(0),
+                                        used,
+                                        title: html_clean(&tds[11]),
+                                        site: name.to_string(),
+                                    });
+                                }
+                            }
+                        } else {
+                            for body in rows {
+                                let tds: Vec<String> = Regex::new(r"(?s)<td>(.*?)</td>")
+                                    .ok().unwrap()
+                                    .captures_iter(&body)
+                                    .map(|c| c.get(1).map(|x| x.as_str().to_string()).unwrap_or_default())
+                                    .collect();
+                                if tds.len() >= 10 {
+                                    let used = tds[8].trim().parse::<u64>().unwrap_or(0);
+                                    if used == 0 { continue; }
+                                    usage_all.push(UsageItem {
+                                        time: html_clean(&tds[0]),
+                                        nickname: html_clean(&tds[3]),
+                                        avatar: av(&tds[2]),
+                                        remain: tds[5].trim().parse::<u64>().unwrap_or(0),
+                                        used,
+                                        title: html_clean(&tds[9]),
+                                        site: name.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !any_ok {
+        let has_cookie = cfg.sites.values().any(|s| !s.cookie.trim().is_empty());
+        return Ok(SalesData {
+            ok: false,
+            msg: if has_cookie {
+                String::from("已读取到本地 Cookie 但已失效（会话过期），请点击配置重新登录")
+            } else {
+                String::from("未找到站点 Cookie，请点击配置")
+            },
+            login_person: String::new(),
+            self_recharge: 0,
+            left_recharge: 0,
+            pre_recharge: 0,
+            today_follow: 0,
+            today_consume: 0,
+            shangji_count: 0,
+            monthly_self: 0,
+            monthly_left: 0,
+            monthly_pre: 0,
+            monthly_new_follow: 0,
+            updated_at: String::new(),
+            leaderboard: vec![],
+            recharge: std::collections::HashMap::new(),
+            usage: vec![],
+            failed_sites,
+        });
+    }
+
+    let mut leaderboard: Vec<(RankItem, u32)> = name_amounts
+        .iter()
+        .map(|(n, (amount, group, rank, follow))| {
+            (
+                RankItem {
+                    rank: 0,
+                    name: n.clone(),
+                    amount: *amount,
+                    group: group.clone(),
+                    follow: *follow,
+                },
+                *rank,
+            )
+        })
+        .collect();
+    leaderboard.sort_by(|a, b| {
+        let ga = if a.0.group == "谨言" { 1 } else { 0 };
+        let gb = if b.0.group == "谨言" { 1 } else { 0 };
+        if ga != gb {
+            ga.cmp(&gb)
+        } else {
+            b.0.amount.cmp(&a.0.amount).then(a.1.cmp(&b.1))
+        }
+    });
+    let leaderboard: Vec<RankItem> = leaderboard
+        .into_iter()
+        .enumerate()
+        .map(|(i, (mut item, _))| {
+            item.rank = (i + 1) as u32;
+            item
+        })
+        .collect();
+
+    Ok(SalesData {
+        ok: true,
+        msg: String::new(),
+        login_person,
+        self_recharge: self_r,
+        left_recharge: left_r,
+        pre_recharge: pre_r,
+        today_follow: follow_total,
+        today_consume: consume_total,
+        shangji_count: shangji_total,
+        monthly_self,
+        monthly_left,
+        monthly_pre,
+        monthly_new_follow,
+        updated_at: chrono_now_str(),
+        leaderboard,
+        recharge: recharge_by_person,
+        usage: usage_all,
+        failed_sites,
+    })
+}
+
+/// 千问视觉模型识别验证码（4 位字符）
+async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<String, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let key = cfg.ai_keys.get("千问").cloned().unwrap_or_default();
+    if key.trim().is_empty() {
+        return Err(String::from("请先配置千问 API Key（用于识别验证码）"));
+    }
+    let model = String::from("qwen3-vl-flash");
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "识别图片中的验证码字符，只输出字符本身（4位字母或数字），不要任何其他内容。"},
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{img_base64}")}}
+            ]
+        }]
+    });
+    let resp = state
+        .http
+        .post("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
+        .header("Authorization", format!("Bearer {}", key.trim()))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("识别请求失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("识别接口返回 {}", resp.status()));
+    }
+    let j: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let text = j["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let chars: String = text
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .chars()
+        .take(4)
+        .collect();
+    if chars.chars().count() == 4 {
+        Ok(chars)
+    } else {
+        Err(format!("识别结果异常: {text}"))
+    }
+}
+
+/// 浏览器自动化全自动登录：填账号密码 → 识别验证码 → 提交 → 捕获 PHPSESSID 保存
+#[tauri::command]
+async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: String) -> Result<String, String> {
+    let cfg0 = state.config.lock().unwrap().clone();
+    let site_cfg = cfg0.sites.get(&site).cloned().unwrap_or_default();
+    if site_cfg.username.trim().is_empty() {
+        return Err(String::from("未配置账号，请先在「配置 Cookie」面板填写账号密码"));
+    }
+    if site_cfg.password.trim().is_empty() {
+        return Err(String::from("未配置密码，请先在「配置 Cookie」面板填写账号密码"));
+    }
+    let username = site_cfg.username.trim().to_string();
+    let password = site_cfg.password.trim().to_string();
+
+    let Some((_, login_url)) = SALES_LOGIN.iter().find(|(n, _)| *n == site) else {
+        return Err(format!("未知站点: {site}"));
+    };
+    let Some((_, base)) = SALES_SITES.iter().find(|(n, _)| *n == site) else {
+        return Err(format!("未知站点: {site}"));
+    };
+    let host = base.trim_start_matches("https://").to_string();
+
+    let client = reqwest::Client::new();
+    if !cdp_ready(&client).await {
+        launch_ai_edge(true)?;
+        if !cdp_ready(&client).await {
+            return Err(String::from("浏览器启动超时"));
+        }
+    }
+
+    let resp = client
+        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new?{}", urlencode(login_url)))
+        .send()
+        .await
+        .map_err(|e| format!("创建标签页失败: {e}"))?;
+    let tab: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let ws_url = tab
+        .get("webSocketDebuggerUrl")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| String::from("无法获取调试连接"))?
+        .to_string();
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|e| format!("连接调试端口失败: {e}"))?;
+    let mut next_id: u64 = 300;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Network.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
+    wait_page_loaded(&mut ws, &mut next_id).await?;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    let u_json = serde_json::to_string(&username).unwrap_or_default();
+    let p_json = serde_json::to_string(&password).unwrap_or_default();
+    let fill_script = format!(
+        r#"(() => {{
+          const setv = (sel, v) => {{
+            const el = document.querySelector(sel);
+            if (!el) return false;
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (setter) setter.call(el, v); else el.value = v;
+            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            return true;
+          }};
+          const okU = setv('#SiteControl_LoginName', {u_json});
+          const okP = setv('#SiteControl_LoginPass', {p_json});
+          return okU && okP;
+        }})()"#
+    );
+
+    let mut last_err = String::from("未知错误");
+    for attempt in 0..5 {
+        next_id += 1;
+        cdp_call(
+            &mut ws,
+            next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": fill_script, "returnByValue": true}),
+        )
+        .await?;
+
+        next_id += 1;
+        let shot = cdp_call(
+            &mut ws,
+            next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": "(() => { const el = document.getElementById('checkpic'); if (!el) return null; const r = el.getBoundingClientRect(); return {x: r.x, y: r.y, w: r.width, h: r.height}; })()", "returnByValue": true}),
+        )
+        .await?;
+        let (x, y, w, h) = match shot.pointer("/result/value") {
+            Some(v) => (
+                v.get("x").and_then(|n| n.as_f64()).unwrap_or(0.0),
+                v.get("y").and_then(|n| n.as_f64()).unwrap_or(0.0),
+                v.get("w").and_then(|n| n.as_f64()).unwrap_or(120.0),
+                v.get("h").and_then(|n| n.as_f64()).unwrap_or(40.0),
+            ),
+            None => (0.0, 0.0, 120.0, 40.0),
+        };
+        next_id += 1;
+        let cap = cdp_call(
+            &mut ws,
+            next_id,
+            "Page.captureScreenshot",
+            serde_json::json!({"format": "png", "clip": {"x": x, "y": y, "width": w, "height": h, "scale": 2}}),
+        )
+        .await?;
+        let b64 = cap.get("data").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if b64.is_empty() {
+            last_err = String::from("截图验证码失败");
+            continue;
+        }
+
+        let code = match ocr_captcha(&state, &b64).await {
+            Ok(c) => c,
+            Err(e) => {
+                last_err = e;
+                next_id += 1;
+                let _ = cdp_call(&mut ws, next_id, "Runtime.evaluate", serde_json::json!({"expression": "changing(); 'ok'"})).await;
+                continue;
+            }
+        };
+
+        let code_json = serde_json::to_string(&code).unwrap_or_default();
+        let submit_script = format!(
+            r#"(() => {{
+              const el = document.querySelector('#Login_CheckCode');
+              if (!el) return 'no-input';
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+              if (setter) setter.call(el, {code_json}); else el.value = {code_json};
+              el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+              el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+              if (typeof postdata === 'function') {{ postdata(); return 'submitted-' + {code_json}; }}
+              return 'no-postdata';
+            }})()"#
+        );
+        next_id += 1;
+        cdp_call(
+            &mut ws,
+            next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": submit_script, "returnByValue": true}),
+        )
+        .await?;
+
+        let mut logged_in = false;
+        for _ in 0..12 {
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+            next_id += 1;
+            if let Ok(cur) = cdp_call(
+                &mut ws,
+                next_id,
+                "Runtime.evaluate",
+                serde_json::json!({"expression": "location.href", "returnByValue": true}),
+            )
+            .await
+            {
+                let url = cur
+                    .pointer("/result/value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if !url.contains("control_login") && !url.is_empty() {
+                    logged_in = true;
+                    break;
+                }
+            }
+        }
+        if !logged_in {
+            last_err = format!("第 {} 次尝试：验证码识别可能错误，已自动重试", attempt + 1);
+            next_id += 1;
+            let _ = cdp_call(&mut ws, next_id, "Runtime.evaluate", serde_json::json!({"expression": "changing(); 'ok'"})).await;
+            continue;
+        }
+
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        for _ in 0..5 {
+            next_id += 1;
+            if let Ok(r) = cdp_call(&mut ws, next_id, "Network.getCookies", serde_json::json!({})).await {
+                if let Some(cookies) = r.get("cookies").and_then(|c| c.as_array()) {
+                    for ck in cookies {
+                        let name = ck.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        if name != "PHPSESSID" {
+                            continue;
+                        }
+                        let domain = ck.get("domain").and_then(|v| v.as_str()).unwrap_or("");
+                        let value = ck.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if value.is_empty() || !domain.contains(&host) {
+                            continue;
+                        }
+                        let vresp = client
+                            .get(format!("{base}{SALES_TARGET}"))
+                            .header("User-Agent", SALES_UA)
+                            .header("Cookie", format!("PHPSESSID={value}"))
+                            .send()
+                            .await;
+                        if let Ok(vr) = vresp {
+                            if vr.status() == reqwest::StatusCode::OK {
+                                let mut cfg = state.config.lock().unwrap();
+                                let e = cfg.sites.entry(site.clone()).or_default();
+                                e.base_url = base.to_string();
+                                e.cookie = value.clone();
+                                if let Ok(p) = config_path(&app) {
+                                    if let Ok(raw) = serde_json::to_string_pretty(&*cfg) {
+                                        let _ = fs::write(p, raw);
+                                    }
+                                }
+                                return Ok(value);
+                            }
+                        }
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+        last_err = String::from("登录成功但未捕获到 Cookie");
+    }
+    Err(format!("自动登录失败（{last_err}）"))
+}
+
 fn urlencode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
@@ -1299,7 +2089,6 @@ fn urlencode(s: &str) -> String {
     }
     out
 }
-
 fn emoji_for(name: &str) -> String {
     let n = name.to_lowercase();
     if n.contains("chrome") { return "🌐".into() }
@@ -1735,7 +2524,9 @@ pub fn run() {
             clean_junk,
             ask_ai_browser,
             ask_ai,
-            open_external
+            open_external,
+            fetch_sales_data,
+            auto_login_site
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
