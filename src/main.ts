@@ -237,23 +237,36 @@ async function refreshWeather() {
     const hoursEl = $("w-hours");
     hoursEl.innerHTML = (w.hourly ?? [])
       .map(
-        (h) =>
-          `<span class="h-chip"><b>${h.time.slice(0, 2)}时</b><i>${
-            WMO_EMOJI[h.code] ?? "🌡"
-          }</i><em>${Math.round(h.temp)}°</em></span>`
+        (h, i) =>
+          `<span class="h-chip${i === 0 ? " now" : ""}"><b>${
+            i === 0 ? "现在" : `${h.time.slice(0, 2)}时`
+          }</b><i>${WMO_EMOJI[h.code] ?? "🌡"}</i><em>${Math.round(h.temp)}°</em></span>`
       )
       .join("");
     const daysEl = $("w-days");
-    daysEl.innerHTML = (w.daily ?? [])
-      .map((d, i) => {
-        const dt = new Date(`${d.date}T00:00:00`);
-        const label =
-          i === 0 ? "今天" : i === 1 ? "明天" : WEEK_CN_SHORT[dt.getDay()] ?? d.date;
-        return `<div class="d-row"><span class="d-label">${label}</span><span class="d-emoji">${
-          WMO_EMOJI[d.code] ?? "🌡"
-        }</span><span class="d-temp">${Math.round(d.lo)}° ~ ${Math.round(d.hi)}°</span></div>`;
-      })
-      .join("");
+    const days = w.daily ?? [];
+    if (days.length) {
+      const wk = days.map((d) => [d.lo, d.hi]).flat();
+      const wmin = Math.min(...wk);
+      const wmax = Math.max(...wk);
+      const span = Math.max(wmax - wmin, 1);
+      daysEl.innerHTML = days
+        .map((d, i) => {
+          const dt = new Date(`${d.date}T00:00:00`);
+          const label =
+            i === 0 ? "今天" : i === 1 ? "明天" : (WEEK_CN_SHORT[dt.getDay()] ?? d.date);
+          const loP = ((d.lo - wmin) / span) * 100;
+          const hiP = ((d.hi - wmin) / span) * 100;
+          return `<div class="d-row${i === 0 ? " today" : ""}"><span class="d-label">${label}</span><span class="d-emoji">${
+            WMO_EMOJI[d.code] ?? "🌡"
+          }</span><span class="d-bar"><i class="d-track" style="left:${loP.toFixed(1)}%;width:${(
+            hiP - loP
+          ).toFixed(1)}%"></i><b class="d-dot" style="left:${loP.toFixed(1)}%"></b><b class="d-dot d-dot-r" style="left:${hiP.toFixed(
+            1
+          )}%"></b></span><span class="d-stats">${Math.round(d.lo)}° / ${Math.round(d.hi)}°</span></div>`;
+        })
+        .join("");
+    }
   } catch {
     $("w-desc").textContent = "天气获取失败";
   }

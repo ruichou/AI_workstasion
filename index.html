@@ -38,31 +38,37 @@
         <!-- 行 1：时间+天气 -->
         <section class="card clock-card">
           <button id="btn-city" class="city-gear" title="设置城市">⚙</button>
-          <div class="time-row">
-            <span id="clock-time" class="clock-time">--:--</span>
-            <span id="clock-sec" class="clock-sec">--</span>
-          </div>
-          <div class="clock-sub">
-            <span id="clock-date" class="clock-date">----年--月--日 星期-</span>
-            <span id="clock-lunar" class="clock-lunar">农历--</span>
-          </div>
-          <div class="weather-box">
-            <span id="w-emoji" class="w-emoji">🌤</span>
-            <div class="w-temp" id="w-temp">--°</div>
-            <div class="w-desc" id="w-desc">加载中…</div>
-          </div>
-          <div class="weather-meta">
-            <div class="w-line" id="w-city">📍 --</div>
-            <div class="w-line" id="w-humid">💧 湿度 --%</div>
-            <div class="w-line" id="w-feels">🌡 体感 --°</div>
-            <div class="w-line" id="w-wind">🌬 风速 --</div>
-          </div>
-          <div class="weather-hours" id="w-hours"></div>
-          <div class="weather-days" id="w-days"></div>
-          <div class="habit-row">
-            <button id="btn-water" class="habit-chip" title="点击 +1 杯，双击清零">💧 <span id="cnt-water">0</span>杯 <span class="habit-add">+</span></button>
-            <button id="btn-smoke" class="habit-chip" title="点击 +1 根，双击清零">🚬 <span id="cnt-smoke">0</span>根 <span class="habit-add">+</span></button>
-            <button id="btn-habit-stats" class="habit-chip habit-stats-btn" title="查看周/月统计">📊</button>
+          <div class="clock-main">
+            <div class="clock-left">
+              <div class="time-row">
+                <span id="clock-time" class="clock-time">--:--</span>
+                <span id="clock-sec" class="clock-sec">--</span>
+              </div>
+              <div class="clock-sub">
+                <span id="clock-date" class="clock-date">----年--月--日 星期-</span>
+                <span id="clock-lunar" class="clock-lunar">农历--</span>
+              </div>
+              <div class="weather-box">
+                <span id="w-emoji" class="w-emoji">🌤</span>
+                <div class="w-temp" id="w-temp">--°</div>
+                <div class="w-desc" id="w-desc">加载中…</div>
+              </div>
+              <div class="weather-meta">
+                <div class="w-line" id="w-city">📍 --</div>
+                <div class="w-line" id="w-humid">💧 湿度 --%</div>
+                <div class="w-line" id="w-feels">🌡 体感 --°</div>
+                <div class="w-line" id="w-wind">🌬 风速 --</div>
+              </div>
+              <div class="habit-row">
+                <button id="btn-water" class="habit-chip" title="点击 +1 杯，双击清零">💧 <span id="cnt-water">0</span>杯 <span class="habit-add">+</span></button>
+                <button id="btn-smoke" class="habit-chip" title="点击 +1 根，双击清零">🚬 <span id="cnt-smoke">0</span>根 <span class="habit-add">+</span></button>
+                <button id="btn-habit-stats" class="habit-chip habit-stats-btn" title="查看周/月统计">📊</button>
+              </div>
+            </div>
+            <div class="clock-right">
+              <div class="weather-days" id="w-days"></div>
+              <div class="weather-hours" id="w-hours"></div>
+            </div>
           </div>
         </section>
 

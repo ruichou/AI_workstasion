@@ -1230,6 +1230,31 @@ body {
   position: relative;
 }
 
+.clock-main {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
+  gap: clamp(12px, 1.4vw, 22px);
+  align-items: center;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.clock-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.clock-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  min-width: 0;
+}
+
 .city-gear {
   position: absolute;
   top: 8px;
@@ -1349,19 +1374,19 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px 18px;
-  margin-top: 12px;
   font-size: clamp(9px, 0.8vw, 12.5px);
   color: var(--text-muted);
   text-align: left;
   overflow: hidden;
+  min-width: 200px;
 }
 
 .weather-hours {
   display: flex;
-  gap: 4px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 12px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
   scrollbar-width: thin;
 }
 
@@ -1376,60 +1401,117 @@ body {
 
 .h-chip {
   flex: 0 0 auto;
+  min-width: 52px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 5px 7px;
+  gap: 4px;
+  padding: 8px 6px 7px;
   border: 1px solid var(--glass-border);
   background: var(--glass-bg);
-  border-radius: 9px;
-  font-size: clamp(9px, 0.7vw, 11px);
-  color: var(--text-2);
+  border-radius: 12px;
+}
+
+.h-chip.now {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.14), rgba(0, 212, 255, 0.05));
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.18);
 }
 
 .h-chip b {
-  color: var(--text-muted);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.h-chip.now b {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .h-chip i {
   font-style: normal;
-  font-size: clamp(12px, 1vw, 15px);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .h-chip em {
   font-style: normal;
-  color: var(--text);
+  font-size: 13px;
   font-weight: 600;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .weather-days {
-  margin-top: 10px;
   display: grid;
-  gap: 3px;
-  font-size: clamp(9px, 0.75vw, 12px);
 }
 
 .d-row {
   display: grid;
-  grid-template-columns: 44px 22px 1fr;
+  grid-template-columns: 40px 22px minmax(0, 1fr) 66px;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.d-row + .d-row {
+  border-top: 1px solid var(--glass-border);
 }
 
 .d-label {
+  font-size: 11px;
   color: var(--text-2);
+  white-space: nowrap;
+}
+
+.d-row.today .d-label {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .d-emoji {
   text-align: center;
+  font-size: 14px;
+  line-height: 1;
 }
 
-.d-temp {
-  color: var(--text-muted);
+.d-bar {
+  position: relative;
+  height: 16px;
+  display: flex;
+  align-items: center;
+}
+
+.d-track {
+  position: absolute;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), #8b5cf6 55%, #f97316);
+  opacity: 0.85;
+}
+
+.d-dot {
+  position: absolute;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text);
+  transform: translate(-50%, 50%);
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4);
+}
+
+.d-stats {
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .habit-row {
@@ -3077,6 +3159,13 @@ body {
 }
 
 /* ---------- 矮窗口紧凑兜底 ---------- */
+@media (max-width: 980px) {
+  .clock-main {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
 @media (max-height: 600px) {
   .grid {
     gap: 10px;

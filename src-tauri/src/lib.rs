@@ -551,7 +551,7 @@ async fn weather_forecast(
                     }
                     started = true;
                 }
-                if hourly.len() >= 24 {
+                if hourly.len() >= 12 {
                     break;
                 }
                 hourly.push(HrWeather {
