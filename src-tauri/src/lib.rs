@@ -1060,11 +1060,10 @@ fn launch_quark() -> Result<(), String> {
     let Some(q) = quark_path() else {
         return Err(String::from("未找到夸克浏览器"));
     };
-    let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| String::from("."));
-    let profile = format!(r"{local}\glassworkspace\quark-sites");
+    // 注意：不带 --user-data-dir，确保打开的是用户日常使用的那个夸克（含已登录状态/主体配置）。
+    // 若用户夸克已在运行，此启动会并入现有实例，随后回落到「直接打开网址」分支。
     let args = vec![
         format!("--remote-debugging-port={QUARK_PORT}"),
-        format!("--user-data-dir={profile}"),
         String::from("--no-first-run"),
         String::from("--no-default-browser-check"),
     ];
@@ -2377,66 +2376,83 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     Err(format!("自动登录失败（{last_err}）"))
 }
 
-/// 在夸克浏览器（专用实例）中复用应用内已保存的 PHPSESSID Cookie 打开销售站点
+/// 在用户自己的夸克浏览器中打开销售站点：优先是用户日常使用（已登录、已选好主体）的那个夸克，
+/// 应用内有有效 Cookie 时自动补上实现免登录直达后台首页
 #[tauri::command]
 async fn open_site_in_quark(state: State<'_, AppState>, site: String) -> Result<String, String> {
     let cfg0 = state.config.lock().unwrap().clone();
     let sc = cfg0.sites.get(&site).cloned().unwrap_or_default();
-    if sc.cookie.trim().is_empty() {
-        return Err(String::from("该站点还没有 Cookie，请先在「配置 Cookie」面板点自动登录"));
-    }
     let Some((_, base)) = SALES_SITES.iter().find(|(n, _)| *n == site) else {
         return Err(format!("未知站点: {site}"));
     };
     let host = base.trim_start_matches("https://").to_string();
     let cookie = sc.cookie.trim().to_string();
+    let page_url = format!("{base}{SALES_HOME}");
 
     let client = reqwest::Client::new();
-    if !cdp_ready_at(&client, QUARK_PORT).await {
-        kill_stale_quark();
-        launch_quark()?;
-        if !cdp_ready_at(&client, QUARK_PORT).await {
-            return Err(String::from("夸克启动超时"));
+    // 1) 能连上带调试端口的夸克（我们刚用用户默认资料启动的）→ 直接沿用，并补 Cookie 直达首页
+    let mut cdp_up = cdp_ready_at(&client, QUARK_PORT).await;
+    if !cdp_up {
+        if launch_quark().is_ok() {
+            cdp_up = cdp_ready_at(&client, QUARK_PORT).await;
         }
     }
+    if cdp_up {
+        let mut tab_err = String::from("未知错误");
+        let (ws_url, _) = open_cdp_tab(&client, QUARK_PORT, || {}, &mut tab_err).await?;
+        let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("连接调试端口失败: {e}"))?;
+        let mut next_id: u64 = 200;
+        let mut domain_ready = false;
+        if !cookie.is_empty() {
+            next_id += 1;
+            cdp_call(&mut ws, next_id, "Network.enable", serde_json::json!({})).await?;
+            next_id += 1;
+            if let Ok(r) = cdp_call(
+                &mut ws,
+                next_id,
+                "Network.setCookie",
+                serde_json::json!({
+                    "name": "PHPSESSID",
+                    "value": cookie,
+                    "domain": host,
+                    "path": "/",
+                    "secure": true,
+                    "httpOnly": true,
+                }),
+            )
+            .await
+            {
+                domain_ready = r.pointer("/success").and_then(|v| v.as_bool()).unwrap_or(false);
+            }
+        }
+        next_id += 1;
+        cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
+        next_id += 1;
+        cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
+        next_id += 1;
+        cdp_call(
+            &mut ws,
+            next_id,
+            "Page.navigate",
+            serde_json::json!({"url": page_url}),
+        )
+        .await?;
+        wait_page_loaded(&mut ws, &mut next_id).await?;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let extra = if domain_ready { "（已自动带登录态）" } else { "" };
+        return Ok(format!("已在夸克中打开 {site}{extra}"));
+    }
 
-    let mut tab_err = String::from("未知错误");
-    let (ws_url, _) = open_cdp_tab(&client, QUARK_PORT, kill_stale_quark, &mut tab_err).await?;
-    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
-        .await
-        .map_err(|e| format!("连接调试端口失败: {e}"))?;
-    let mut next_id: u64 = 200;
-    next_id += 1;
-    cdp_call(&mut ws, next_id, "Network.enable", serde_json::json!({})).await?;
-    next_id += 1;
-    cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
-    next_id += 1;
-    cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
-    next_id += 1;
-    cdp_call(
-        &mut ws,
-        next_id,
-        "Network.setCookie",
-        serde_json::json!({
-            "name": "PHPSESSID",
-            "value": cookie,
-            "domain": host,
-            "path": "/",
-            "secure": true,
-            "httpOnly": true,
-        }),
-    )
-    .await?;
-    next_id += 1;
-    cdp_call(
-        &mut ws,
-        next_id,
-        "Page.navigate",
-        serde_json::json!({"url": format!("{base}{SALES_HOME}")}),
-    )
-    .await?;
-    wait_page_loaded(&mut ws, &mut next_id).await?;
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // 2) 用户夸克已在运行（没开调试端口）→ 直接把地址交给它新开标签页，用夸克自己存的登录态
+    let Some(q) = quark_path() else {
+        return Err(String::from("未找到夸克浏览器"));
+    };
+    std::process::Command::new(&q)
+        .arg(&page_url)
+        .spawn()
+        .map_err(|e| format!("打开夸克失败: {e}"))?;
     Ok(format!("已在夸克中打开 {site}"))
 }
 
