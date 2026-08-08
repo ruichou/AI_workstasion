@@ -400,9 +400,104 @@ fn wmo_desc(code: u8) -> (String, &'static str) {
     (emoji.to_string(), desc)
 }
 
+/// 城市名 → 中国天气网城市代码（江苏覆盖较全；其余主要城市兜底）
+fn cn_city_code(city: &str) -> Option<&'static str> {
+    let name: String = city.chars().take(2).collect();
+    const MAP: &[(&str, &str)] = &[
+        ("北京", "101010100"), ("上海", "101020100"), ("天津", "101030100"), ("重庆", "101040100"),
+        ("南京", "101190101"), ("无锡", "101190201"), ("镇江", "101190301"), ("苏州", "101190401"),
+        ("南通", "101190501"), ("扬州", "101190601"), ("盐城", "101190701"), ("徐州", "101190801"),
+        ("淮安", "101190901"), ("连云港", "101191001"), ("常州", "101191101"), ("泰州", "101191201"),
+        ("宿迁", "101191301"), ("杭州", "101210101"), ("宁波", "101210401"), ("温州", "101210701"),
+        ("嘉兴", "101210301"), ("湖州", "101210201"), ("绍兴", "101210501"), ("台州", "101210601"),
+        ("金华", "101210901"), ("合肥", "101220101"), ("芜湖", "101220301"), ("福州", "101230101"),
+        ("厦门", "101230201"), ("泉州", "101230501"), ("南昌", "101240101"), ("长沙", "101250101"),
+        ("济南", "101120101"), ("青岛", "101120201"), ("郑州", "101180101"), ("武汉", "101200101"),
+        ("成都", "101270101"), ("西安", "101110101"), ("沈阳", "101070101"), ("大连", "101070201"),
+        ("长春", "101060101"), ("哈尔滨", "101050101"), ("石家庄", "101090101"), ("太原", "101100101"),
+        ("呼和浩特", "101080101"), ("南宁", "101300101"), ("海口", "101310101"), ("昆明", "101290101"),
+        ("贵阳", "101260101"), ("兰州", "101160101"), ("西宁", "101150101"), ("银川", "101170101"),
+        ("乌鲁木齐", "101130101"), ("拉萨", "101140101"),
+    ];
+    MAP.iter().find(|(n, _)| name.starts_with(*n)).map(|(_, c)| *c)
+}
+
+/// “阵雨/多云/雷阵雨…” → WMO code（与原来图标体系一致）
+fn cn_weather_code(w: &str) -> u8 {
+    let w = w.to_lowercase();
+    if w.contains("雷") { return 95; }
+    if w.contains("雪") || w.contains("霰") || w.contains("冰雹") {
+        return 71;
+    }
+    if w.contains("雨") { return if w.contains("大雨") { 82 } else { 61 }; }
+    if w.contains("阴") { return 3; }
+    if w.contains("雾") || w.contains("霾") || w.contains("浮尘") || w.contains("扬沙") { return 45; }
+    if w.contains("多云") || w.contains("少云") { return 1; }
+    if w.contains("晴") { return 0; }
+    if w.contains("风") { return 4; }
+    1
+}
+
+/// 中国天气网（中央气象台）实时天气：免费无 Key。失败返回 None，由调用方回退其它源
+async fn weather_cn(
+    state: &State<'_, AppState>,
+    cfg: &Config,
+) -> Option<Weather> {
+    let code = cn_city_code(&cfg.city)?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    let resp = state
+        .http
+        .get(format!("https://d1.weather.com.cn/sk_2d/{code}.html?_={ts}"))
+        .header("Referer", "https://www.weather.com.cn/")
+        .header("User-Agent", SALES_UA)
+        .send()
+        .await
+        .ok()?;
+    let text = resp.text().await.ok()?;
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    let obj: serde_json::Value = serde_json::from_str(&text[start..=end]).ok()?;
+    let temp = obj.get("temp")?.as_str()?.trim().parse::<f64>().ok()?;
+    let humidity = obj
+        .get("sd")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.trim_end_matches('%').trim().parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let wind = obj
+        .get("wse")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.trim_end_matches("km/h").trim().parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let weather = obj.get("weather").and_then(|v| v.as_str()).unwrap_or("");
+    let is_day = obj
+        .get("time")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.split(':').next())
+        .and_then(|h| h.trim().parse::<u32>().ok())
+        .map(|h| (6..=18).contains(&h))
+        .unwrap_or(true);
+    Some(Weather {
+        city: cfg.city.clone(),
+        temp,
+        feels: temp,
+        humidity,
+        wind,
+        code: cn_weather_code(weather),
+        is_day,
+    })
+}
+
 #[tauri::command]
 async fn get_weather(state: State<'_, AppState>) -> Result<Weather, String> {
     let cfg = state.config.lock().unwrap().clone();
+    // 国内优先：中国天气网（中央气象台数据，无 Key）
+    if let Some(w) = weather_cn(&state, &cfg).await {
+        return Ok(w);
+    }
+    // 回退：Open-Meteo 全球接口
     let (lat, lon) = resolve_coords(&state, &cfg).await?;
 
     let url = format!(
