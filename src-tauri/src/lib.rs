@@ -1014,6 +1014,73 @@ async fn cdp_ready(client: &reqwest::Client) -> bool {
     false
 }
 
+/// 杀掉残留的自动化 Edge（上次退出未清理、端口被占且状态异常时），避免后续连接拿到坏实例
+fn kill_stale_ai_edge() {
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*glassworkspace*edge-ai*' -or $_.CommandLine -like '*remote-debugging-port=9230*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+        ])
+        .output();
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+}
+
+/// 创建新标签页并解析返回的调试信息；对解码失败/非 JSON 响应做一次清理重试，
+/// 保证任何情况下都返回明确错误（含响应预览，便于定位）
+async fn open_cdp_tab(
+    client: &reqwest::Client,
+    next_err: &mut String,
+) -> Result<(String, String), String> {
+    // String = (webSocketDebuggerUrl, page url)。两次尝试：先裸创建，失败则杀掉残留 Edge 重试
+    for attempt in 0..2 {
+        let resp = client
+            .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
+            .send()
+            .await;
+        let text = match resp {
+            Ok(r) => {
+                let status = r.status();
+                let body = r.text().await.unwrap_or_default();
+                if !status.is_success() || !body.trim_start().starts_with('{') {
+                    let preview = body.chars().take(120).collect::<String>();
+                    if attempt == 0 {
+                        *next_err = format!("标签页接口 HTTP {status}：{preview}");
+                        kill_stale_ai_edge();
+                        continue;
+                    }
+                    return Err(format!("创建标签页失败 HTTP {status}：{preview}"));
+                }
+                body
+            }
+            Err(e) => {
+                if attempt == 0 {
+                    *next_err = format!("创建标签页请求失败: {e}");
+                    kill_stale_ai_edge();
+                    continue;
+                }
+                return Err(format!("创建标签页请求失败: {e}"));
+            }
+        };
+        return serde_json::from_str::<serde_json::Value>(&text)
+            .map_err(|e| format!("解析标签页响应失败: {e}"))
+            .and_then(|v| {
+                let ws_url = v
+                    .get("webSocketDebuggerUrl")
+                    .and_then(|x| x.as_str())
+                    .ok_or_else(|| String::from("无法获取调试连接"))?
+                    .to_string();
+                let page = v
+                    .get("url")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                Ok((ws_url, page))
+            });
+    }
+    Err(format!("创建标签页失败（{next_err}）"))
+}
+
 type Ws = tokio_tungstenite::WebSocketStream<
     tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
 >;
@@ -1081,6 +1148,7 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
 
     let client = reqwest::Client::new();
     if !cdp_ready(&client).await {
+        kill_stale_ai_edge();
         launch_ai_edge(false)?;
         if !cdp_ready(&client).await {
             return Err(String::from("浏览器启动超时"));
@@ -1088,17 +1156,8 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
     }
 
     let url = ai_url_for(&model);
-    let resp = client
-        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
-        .send()
-        .await
-        .map_err(|e| format!("创建标签页失败: {e}"))?;
-    let tab: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let ws_url = tab
-        .get("webSocketDebuggerUrl")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| String::from("无法获取调试连接"))?
-        .to_string();
+    let mut tab_err = String::from("未知错误");
+    let (ws_url, _) = open_cdp_tab(&client, &mut tab_err).await?;
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
@@ -1984,7 +2043,9 @@ async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<St
     if !resp.status().is_success() {
         return Err(format!("识别接口返回 {}", resp.status()));
     }
-    let j: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let raw = resp.text().await.map_err(|e| e.to_string())?;
+    let j: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("识别结果解析失败: {e}，响应: {}", raw.chars().take(100).collect::<String>()))?;
     let text = j["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("")
@@ -2028,23 +2089,15 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
 
     let client = reqwest::Client::new();
     if !cdp_ready(&client).await {
+        kill_stale_ai_edge();
         launch_ai_edge(true)?;
         if !cdp_ready(&client).await {
             return Err(String::from("浏览器启动超时"));
         }
     }
 
-    let resp = client
-        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
-        .send()
-        .await
-        .map_err(|e| format!("创建标签页失败: {e}"))?;
-    let tab: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
-    let ws_url = tab
-        .get("webSocketDebuggerUrl")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| String::from("无法获取调试连接"))?
-        .to_string();
+    let mut tab_err = String::from("未知错误");
+    let (ws_url, _) = open_cdp_tab(&client, &mut tab_err).await?;
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
