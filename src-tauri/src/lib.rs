@@ -120,6 +120,23 @@ struct Weather {
     wind: f64,
     code: u8,
     is_day: bool,
+    hourly: Vec<HrWeather>,
+    daily: Vec<DayWeather>,
+}
+
+#[derive(Serialize, Clone)]
+struct HrWeather {
+    time: String, // "14:00"（本机时区）
+    temp: f64,
+    code: u8,
+}
+
+#[derive(Serialize, Clone)]
+struct DayWeather {
+    date: String, // "08-08"
+    hi: f64,
+    lo: f64,
+    code: u8,
 }
 
 struct AppState {
@@ -487,19 +504,122 @@ async fn weather_cn(
         wind,
         code: cn_weather_code(weather),
         is_day,
+        hourly: Vec::new(),
+        daily: Vec::new(),
     })
+}
+
+/// Open-Meteo 未来预报：未来 24 小时逐小时 + 未来 7 天（免费无 Key）
+async fn weather_forecast(
+    state: &State<'_, AppState>,
+    lat: f64,
+    lon: f64,
+) -> (Vec<HrWeather>, Vec<DayWeather>) {
+    let url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&forecast_days=7&timezone=auto&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min"
+    );
+    let resp = match state.http.get(&url).send().await {
+        Ok(r) => match r.json::<serde_json::Value>().await {
+            Ok(v) => v,
+            Err(_) => return (Vec::new(), Vec::new()),
+        },
+        Err(_) => return (Vec::new(), Vec::new()),
+    };
+
+    // 逐小时：取从现在起 24 小时
+    let offset = resp.get("utc_offset_seconds").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let now_utc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as f64)
+        .unwrap_or(0.0);
+    let now_local = now_utc + offset;
+
+    let mut hourly = Vec::new();
+    if let (Some(times), Some(temps), Some(codes)) = (
+        resp.pointer("/hourly/time").and_then(|v| v.as_array()).filter(|a| !a.is_empty()),
+        resp.pointer("/hourly/temperature_2m").and_then(|v| v.as_array()),
+        resp.pointer("/hourly/weather_code").and_then(|v| v.as_array()),
+    ) {
+        let mut started = false;
+        for (i, t) in times.iter().enumerate() {
+            let tstr = t.as_str().unwrap_or("");
+            // "2026-08-08T14:00" → epoch 秒
+            if let Some(secs) = parse_iso_hour(tstr) {
+                if !started {
+                    if secs < now_local - 3600.0 {
+                        continue;
+                    }
+                    started = true;
+                }
+                if hourly.len() >= 24 {
+                    break;
+                }
+                hourly.push(HrWeather {
+                    time: tstr[11..16].to_string(),
+                    temp: temps.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    code: codes.get(i).and_then(|v| v.as_u64()).unwrap_or(0) as u8,
+                });
+            }
+        }
+    }
+
+    // 未来 7 天
+    let mut daily = Vec::new();
+    if let (Some(dates), Some(dcodes), Some(mins), Some(maxs)) = (
+        resp.pointer("/daily/time").and_then(|v| v.as_array()),
+        resp.pointer("/daily/weather_code").and_then(|v| v.as_array()),
+        resp.pointer("/daily/temperature_2m_min").and_then(|v| v.as_array()),
+        resp.pointer("/daily/temperature_2m_max").and_then(|v| v.as_array()),
+    ) {
+        for (i, d) in dates.iter().enumerate() {
+            let ds = d.as_str().unwrap_or("");
+            daily.push(DayWeather {
+                date: if ds.len() >= 10 { ds[5..10].to_string() } else { ds.to_string() },
+                hi: maxs.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                lo: mins.get(i).and_then(|v| v.as_f64()).unwrap_or(0.0),
+                code: dcodes.get(i).and_then(|v| v.as_u64()).unwrap_or(0) as u8,
+            });
+        }
+    }
+    (hourly, daily)
+}
+
+/// "2026-08-08T14:00" → epoch 秒（用 days 算法，无外部依赖）
+fn parse_iso_hour(s: &str) -> Option<f64> {
+    let s = s.as_bytes();
+    if s.len() < 16 || s[4] != b'-' || s[7] != b'-' || s[10] != b'T' || s[13] != b':' {
+        return None;
+    }
+    let at = |a: usize, b: usize| std::str::from_utf8(&s[a..b]).ok()?.trim().parse::<i64>().ok();
+    let y = at(0, 4)?;
+    let m = at(5, 7)?;
+    let d = at(8, 10)?;
+    let h = at(11, 13)?;
+    let min = at(14, 16)?;
+    let mut yy = y;
+    if m <= 2 {
+        yy -= 1;
+    }
+    let era = yy / 400;
+    let yoe = yy - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Some(((days * 24 + h) * 60 + min) as f64 * 60.0)
 }
 
 #[tauri::command]
 async fn get_weather(state: State<'_, AppState>) -> Result<Weather, String> {
     let cfg = state.config.lock().unwrap().clone();
+    let (lat, lon) = resolve_coords(&state, &cfg).await?;
+    let (hourly, daily) = weather_forecast(&state, lat, lon).await;
     // 国内优先：中国天气网（中央气象台数据，无 Key）
-    if let Some(w) = weather_cn(&state, &cfg).await {
+    if let Some(mut w) = weather_cn(&state, &cfg).await {
+        w.hourly = hourly;
+        w.daily = daily;
         return Ok(w);
     }
     // 回退：Open-Meteo 全球接口
-    let (lat, lon) = resolve_coords(&state, &cfg).await?;
-
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day&timezone=auto"
     );
@@ -529,6 +649,8 @@ async fn get_weather(state: State<'_, AppState>) -> Result<Weather, String> {
         wind: getf("wind_speed_10m"),
         code,
         is_day,
+        hourly,
+        daily,
     })
 }
 
@@ -2185,7 +2307,7 @@ async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<St
     if key.trim().is_empty() {
         return Err(String::from("请先配置千问 API Key（用于识别验证码）"));
     }
-    let model = String::from("qwen3-vl-flash");
+    let model = String::from("qwen3.7-flash");
     let body = serde_json::json!({
         "model": model,
         "messages": [{

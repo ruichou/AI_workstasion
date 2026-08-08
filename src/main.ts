@@ -26,6 +26,8 @@ interface Weather {
   wind: number;
   code: number;
   is_day: boolean;
+  hourly: { time: string; temp: number; code: number }[];
+  daily: { date: string; hi: number; lo: number; code: number }[];
 }
 
 interface AppItem {
@@ -66,6 +68,7 @@ function esc(s: unknown): string {
 }
 
 const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
+const WEEK_CN_SHORT = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 // ---------- 农历（solarlunar 精简版） ----------
 const LUNAR_INFO = [
@@ -231,6 +234,26 @@ async function refreshWeather() {
     $("w-humid").textContent = `💧 湿度 ${Math.round(w.humidity)}%`;
     $("w-feels").textContent = `🌡 体感 ${Math.round(w.feels)}°`;
     $("w-wind").textContent = `🌬 风速 ${Math.round(w.wind)} km/h`;
+    const hoursEl = $("w-hours");
+    hoursEl.innerHTML = (w.hourly ?? [])
+      .map(
+        (h) =>
+          `<span class="h-chip"><b>${h.time.slice(0, 2)}时</b><i>${
+            WMO_EMOJI[h.code] ?? "🌡"
+          }</i><em>${Math.round(h.temp)}°</em></span>`
+      )
+      .join("");
+    const daysEl = $("w-days");
+    daysEl.innerHTML = (w.daily ?? [])
+      .map((d, i) => {
+        const dt = new Date(`${d.date}T00:00:00`);
+        const label =
+          i === 0 ? "今天" : i === 1 ? "明天" : WEEK_CN_SHORT[dt.getDay()] ?? d.date;
+        return `<div class="d-row"><span class="d-label">${label}</span><span class="d-emoji">${
+          WMO_EMOJI[d.code] ?? "🌡"
+        }</span><span class="d-temp">${Math.round(d.lo)}° ~ ${Math.round(d.hi)}°</span></div>`;
+      })
+      .join("");
   } catch {
     $("w-desc").textContent = "天气获取失败";
   }

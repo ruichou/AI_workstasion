@@ -1356,6 +1356,82 @@ body {
   overflow: hidden;
 }
 
+.weather-hours {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.weather-hours::-webkit-scrollbar {
+  height: 4px;
+}
+
+.weather-hours::-webkit-scrollbar-thumb {
+  background: var(--glass-border);
+  border-radius: 2px;
+}
+
+.h-chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 7px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  border-radius: 9px;
+  font-size: clamp(9px, 0.7vw, 11px);
+  color: var(--text-2);
+}
+
+.h-chip b {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.h-chip i {
+  font-style: normal;
+  font-size: clamp(12px, 1vw, 15px);
+}
+
+.h-chip em {
+  font-style: normal;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.weather-days {
+  margin-top: 10px;
+  display: grid;
+  gap: 3px;
+  font-size: clamp(9px, 0.75vw, 12px);
+}
+
+.d-row {
+  display: grid;
+  grid-template-columns: 44px 22px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.d-label {
+  color: var(--text-2);
+}
+
+.d-emoji {
+  text-align: center;
+}
+
+.d-temp {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .habit-row {
   display: flex;
   gap: 8px;
