@@ -1676,15 +1676,10 @@ function toast(msg: string) {
 import { Channel } from "@tauri-apps/api/core";
 
 // ---------- 新关注监控 ----------
-// 语义：点击关闭提醒 = 今日不再提醒；不点关闭 = 每分钟数据查到就继续提醒
+// 语义：点击关闭 = 该昵称在这一个平台以后不再提醒（另一个平台匹配到仍会提醒）；不点 = 继续提醒
 const MONITOR_KEY = "monitor-dismissed";
 
 let monitorShownKeys: string[] = [];
-
-function monitorDayKey(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function loadMonitorDismissed(): Set<string> {
   try {
@@ -1704,10 +1699,9 @@ function checkNewFollows(data: SalesData) {
   const matches = data.new_follows ?? [];
   if (!matches.length) return;
   const dismissed = loadMonitorDismissed();
-  const dayKey = monitorDayKey();
-  const fresh = matches.filter((m) => !dismissed.has(`${m.nick}|${m.site}|${dayKey}`));
+  const fresh = matches.filter((m) => !dismissed.has(`${m.nick}|${m.site}`));
   if (!fresh.length) return;
-  monitorShownKeys = fresh.map((m) => `${m.nick}|${m.site}|${dayKey}`);
+  monitorShownKeys = fresh.map((m) => `${m.nick}|${m.site}`);
   invoke("show_screen_notify", {
     pos: "left",
     title: `🔔 新关注提醒！${fresh.length > 1 ? `（${fresh.length} 个）` : ""}`,
@@ -1717,7 +1711,7 @@ function checkNewFollows(data: SalesData) {
   }).catch(() => {});
 }
 
-// 用户点击关闭提醒 → 今日不再提醒这些昵称
+// 用户点击关闭提醒 → 该昵称在此平台以后不再提醒
 function markMonitorDismissed() {
   if (!monitorShownKeys.length) return;
   const dismissed = loadMonitorDismissed();
@@ -2595,6 +2589,23 @@ async function loadOffTime() {
   }
 }
 
+async function setOffTime() {
+  const val = prompt("设定下班时间（格式 HH:MM，如 18:00）：", offTime);
+  if (val === null) return;
+  const v = val.trim();
+  const m = v.match(/^([01]?\d|2[0-3]):[0-5]\d$/);
+  if (!m) {
+    toast("时间格式不正确，请用 HH:MM（如 18:00）");
+    return;
+  }
+  offTime = v;
+  const cfg = await getConfig();
+  cfg.off_time = v;
+  await persistConfig(cfg);
+  updateOffWork();
+  toast(`✅ 下班时间已设为 ${v}（点击可再改）`);
+}
+
 function updateOffWork() {
   const el = $("off-work");
   if (!el) return;
@@ -3208,6 +3219,7 @@ function init() {
     }
   }
   loadOffTime();
+  $("off-work").addEventListener("click", () => void setOffTime());
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);
