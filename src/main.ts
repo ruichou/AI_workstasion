@@ -1694,9 +1694,11 @@ function checkNewFollows(data: SalesData) {
   const matches = data.new_follows ?? [];
   if (!matches.length) return;
   const notified = loadMonitorNotified();
-  const fresh = matches.filter((m) => !notified.has(`${m.nick}|${m.site}`));
+  const today = new Date();
+  const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const fresh = matches.filter((m) => !notified.has(`${m.nick}|${m.site}|${dayKey}`));
   if (!fresh.length) return;
-  for (const m of fresh) notified.add(`${m.nick}|${m.site}`);
+  for (const m of fresh) notified.add(`${m.nick}|${m.site}|${dayKey}`);
   saveMonitorNotified(notified);
   invoke("show_screen_notify", {
     pos: "left",

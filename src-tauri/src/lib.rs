@@ -1869,6 +1869,11 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
             continue;
         }
         let html = resp.text().await.unwrap_or_default();
+        // 会话失效时 PHP 仍返回 200 但内容是登录页：识别后按失败处理（触发前端自动重登）
+        if !html.contains("allczjf") && html.contains("SiteControl_LoginName") {
+            failed_sites.push(name.to_string());
+            continue;
+        }
         any_ok = true;
 
         if let Some(m) = Regex::new(r#"([\u4e00-\u9fa5]{2,4})<br>\s*<a\s+href=['"]control_loginout"#).ok().and_then(|re| re.captures(&html)) {
@@ -2092,41 +2097,47 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
             }
         }
 
-        // 新关注监控：扫描新用户认领页面，匹配监控昵称（td[1]=头像, td[2]=昵称）
+        // 新关注监控：扫描新用户认领页面，匹配监控昵称（任一行任意单元格，兼容两站列差异）
         if !monitored.is_empty() {
             if let Ok(rn) = client
                 .get(format!("{base}/asysmanager/xs_user_newuserrl.php?lm=us&erlm=xyhrl"))
                 .header("User-Agent", SALES_UA)
                 .header("Cookie", format!("PHPSESSID={cookie}"))
+                .header("Referer", format!("{base}/asysmanager/"))
                 .send().await
             {
                 if rn.status() == reqwest::StatusCode::OK {
                     if let Ok(tn) = rn.text().await {
-                        if let Ok(re_rows) = Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>") {
-                            for row in re_rows.captures_iter(&tn) {
-                                let body = row.get(1).map(|x| x.as_str()).unwrap_or("");
-                                let tds: Vec<String> = Regex::new(r"(?s)<td[^>]*>(.*?)</td>")
-                                    .ok().unwrap()
-                                    .captures_iter(body)
-                                    .map(|c| c.get(1).map(|x| x.as_str()).unwrap_or("").to_string())
-                                    .collect();
-                                if tds.len() < 3 {
-                                    continue;
+                        if !tn.contains("SiteControl_LoginName") {
+                            if let Ok(re_rows) = Regex::new(r"(?s)<tr[^>]*>(.*?)</tr>") {
+                                for row in re_rows.captures_iter(&tn) {
+                                    let body = row.get(1).map(|x| x.as_str()).unwrap_or("");
+                                    let tds: Vec<String> = Regex::new(r"(?s)<td[^>]*>(.*?)</td>")
+                                        .ok().unwrap()
+                                        .captures_iter(body)
+                                        .map(|c| c.get(1).map(|x| x.as_str()).unwrap_or("").to_string())
+                                        .collect();
+                                    if tds.len() < 2 {
+                                        continue;
+                                    }
+                                    let nick_match = monitored.iter().find(|m| {
+                                        tds.iter().skip(1).any(|t| {
+                                            let c = html_clean(t);
+                                            !c.is_empty() && c == **m
+                                        })
+                                    });
+                                    let Some(nick) = nick_match else { continue };
+                                    let avatar = tds.iter()
+                                        .filter_map(|t| Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()?.captures(t))
+                                        .find_map(|re| re.get(1))
+                                        .map(|x| x.as_str().to_string())
+                                        .unwrap_or_default();
+                                    new_follows_all.push(NewFollow {
+                                        nick: nick.to_string(),
+                                        site: name.to_string(),
+                                        avatar,
+                                    });
                                 }
-                                let nick_clean = html_clean(&tds[2]);
-                                if nick_clean.is_empty() || !monitored.contains(&nick_clean) {
-                                    continue;
-                                }
-                                let avatar = Regex::new(r#"src=['"]([^'"]+)['"]"#).ok()
-                                    .and_then(|re| re.captures(&tds[1]))
-                                    .and_then(|m| m.get(1))
-                                    .map(|x| x.as_str().to_string())
-                                    .unwrap_or_default();
-                                new_follows_all.push(NewFollow {
-                                    nick: nick_clean,
-                                    site: name.to_string(),
-                                    avatar,
-                                });
                             }
                         }
                     }
