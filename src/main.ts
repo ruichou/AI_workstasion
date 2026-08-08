@@ -234,15 +234,6 @@ async function refreshWeather() {
     $("w-humid").textContent = `💧 湿度 ${Math.round(w.humidity)}%`;
     $("w-feels").textContent = `🌡 体感 ${Math.round(w.feels)}°`;
     $("w-wind").textContent = `🌬 风速 ${Math.round(w.wind)} km/h`;
-    const hoursEl = $("w-hours");
-    hoursEl.innerHTML = (w.hourly ?? [])
-      .map(
-        (h, i) =>
-          `<span class="h-chip${i === 0 ? " now" : ""}"><b>${
-            i === 0 ? "现在" : `${h.time.slice(0, 2)}时`
-          }</b><i>${WMO_EMOJI[h.code] ?? "🌡"}</i><em>${Math.round(h.temp)}°</em></span>`
-      )
-      .join("");
     const daysEl = $("w-days");
     const days = w.daily ?? [];
     if (days.length) {

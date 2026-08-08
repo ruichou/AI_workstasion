@@ -225,7 +225,7 @@ body {
 }
 
 .model-wrap::after {
-  content: "▾";
+  content: "�?;
   position: absolute;
   right: 11px;
   top: 50%;
@@ -471,7 +471,7 @@ body {
   padding: 3px 0 1px;
 }
 
-/* 排行榜 */
+/* 排行�?*/
 .rank-list {
   flex: 1;
   overflow-y: auto;
@@ -673,7 +673,7 @@ body {
   margin-top: 1px;
 }
 
-/* 充值明细弹层 */
+/* 充值明细弹�?*/
 .recharge-box {
   width: min(620px, 88vw);
   height: min(480px, 75vh);
@@ -1221,7 +1221,7 @@ body {
   white-space: nowrap;
 }
 
-/* ---------- 时钟卡 ---------- */
+/* ---------- 时钟�?---------- */
 .clock-card {
   align-items: center;
   text-align: center;
@@ -1253,6 +1253,7 @@ body {
   gap: 8px;
   text-align: left;
   min-width: 0;
+  padding-right: 6px;
 }
 
 .city-gear {
@@ -1381,71 +1382,6 @@ body {
   min-width: 200px;
 }
 
-.weather-hours {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scrollbar-width: thin;
-}
-
-.weather-hours::-webkit-scrollbar {
-  height: 4px;
-}
-
-.weather-hours::-webkit-scrollbar-thumb {
-  background: var(--glass-border);
-  border-radius: 2px;
-}
-
-.h-chip {
-  flex: 0 0 auto;
-  min-width: 52px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 6px 7px;
-  border: 1px solid var(--glass-border);
-  background: var(--glass-bg);
-  border-radius: 12px;
-}
-
-.h-chip.now {
-  border-color: var(--accent);
-  background: linear-gradient(180deg, rgba(0, 212, 255, 0.14), rgba(0, 212, 255, 0.05));
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.18);
-}
-
-.h-chip b {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.h-chip.now b {
-  color: var(--accent);
-  font-weight: 700;
-}
-
-.h-chip i {
-  font-style: normal;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.h-chip em {
-  font-style: normal;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
 .weather-days {
   display: grid;
 }
@@ -1562,7 +1498,7 @@ body {
   max-width: 100%;
 }
 
-/* ---------- 系统状态 ---------- */
+/* ---------- 系统状�?---------- */
 .status-good {
   font-size: clamp(10px, 0.8vw, 12.5px);
   color: var(--green);
@@ -2018,7 +1954,7 @@ body {
   background: rgba(59, 130, 246, 0.15);
 }
 
-/* ---------- 节假日圆点 ---------- */
+/* ---------- 节假日圆�?---------- */
 .fest-dot {
   display: inline-block;
   width: 7px;
@@ -3158,7 +3094,7 @@ body {
   color: var(--text-muted);
 }
 
-/* ---------- 矮窗口紧凑兜底 ---------- */
+/* ---------- 矮窗口紧凑兜�?---------- */
 @media (max-width: 980px) {
   .clock-main {
     grid-template-columns: 1fr;
@@ -3528,7 +3464,7 @@ body {
 }
 
 .ai-msg.typing .ai-bubble::after {
-  content: "▍";
+  content: "�?;
   animation: ai-blink 0.8s step-end infinite;
   color: var(--accent);
 }
