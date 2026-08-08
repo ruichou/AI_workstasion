@@ -1,5 +1,6 @@
 import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition, Window as TauriWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -965,6 +966,7 @@ function initSales() {
     if (e.key === "Enter") void addMonitorNick();
   });
   setInterval(() => void refreshSales(), 60000);
+  listen("notify-closed", () => markMonitorDismissed()).catch(() => {});
   checkAfterSales();
   setInterval(() => {
     checkAfterSales();
@@ -1674,9 +1676,17 @@ function toast(msg: string) {
 import { Channel } from "@tauri-apps/api/core";
 
 // ---------- 新关注监控 ----------
-const MONITOR_KEY = "monitor-notified";
+// 语义：点击关闭提醒 = 今日不再提醒；不点关闭 = 每分钟数据查到就继续提醒
+const MONITOR_KEY = "monitor-dismissed";
 
-function loadMonitorNotified(): Set<string> {
+let monitorShownKeys: string[] = [];
+
+function monitorDayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function loadMonitorDismissed(): Set<string> {
   try {
     const raw = localStorage.getItem(MONITOR_KEY);
     if (raw) return new Set(JSON.parse(raw));
@@ -1686,20 +1696,18 @@ function loadMonitorNotified(): Set<string> {
   return new Set();
 }
 
-function saveMonitorNotified(s: Set<string>) {
+function saveMonitorDismissed(s: Set<string>) {
   localStorage.setItem(MONITOR_KEY, JSON.stringify([...s]));
 }
 
 function checkNewFollows(data: SalesData) {
   const matches = data.new_follows ?? [];
   if (!matches.length) return;
-  const notified = loadMonitorNotified();
-  const today = new Date();
-  const dayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const fresh = matches.filter((m) => !notified.has(`${m.nick}|${m.site}|${dayKey}`));
+  const dismissed = loadMonitorDismissed();
+  const dayKey = monitorDayKey();
+  const fresh = matches.filter((m) => !dismissed.has(`${m.nick}|${m.site}|${dayKey}`));
   if (!fresh.length) return;
-  for (const m of fresh) notified.add(`${m.nick}|${m.site}|${dayKey}`);
-  saveMonitorNotified(notified);
+  monitorShownKeys = fresh.map((m) => `${m.nick}|${m.site}|${dayKey}`);
   invoke("show_screen_notify", {
     pos: "left",
     title: `🔔 新关注提醒！${fresh.length > 1 ? `（${fresh.length} 个）` : ""}`,
@@ -1707,6 +1715,15 @@ function checkNewFollows(data: SalesData) {
     avatars: fresh.map((m) => m.avatar),
     seconds: 0,
   }).catch(() => {});
+}
+
+// 用户点击关闭提醒 → 今日不再提醒这些昵称
+function markMonitorDismissed() {
+  if (!monitorShownKeys.length) return;
+  const dismissed = loadMonitorDismissed();
+  for (const k of monitorShownKeys) dismissed.add(k);
+  saveMonitorDismissed(dismissed);
+  monitorShownKeys = [];
 }
 
 async function addMonitorNick() {

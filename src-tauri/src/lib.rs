@@ -3237,6 +3237,11 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" || window.label() == "notify-win" {
                     api.prevent_close();
+                    // 用户点击关闭新关注提醒 → 通知前端把当前昵标记为“今日已忽略”
+                    if window.label() == "notify-win" {
+                        use tauri::Emitter;
+                        let _ = window.emit("notify-closed", serde_json::json!({}));
+                    }
                     let _ = window.hide();
                 }
             }
