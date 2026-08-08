@@ -1707,7 +1707,7 @@ function checkNewFollows(data: SalesData) {
     title: `🔔 新关注提醒！${fresh.length > 1 ? `（${fresh.length} 个）` : ""}`,
     lines: fresh.map((m) => `匹配到微信昵称：${m.nick}（${m.site}）`),
     avatars: fresh.map((m) => m.avatar),
-    seconds: 0,
+    seconds: 8,
   }).catch(() => {});
 }
 
