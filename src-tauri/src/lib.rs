@@ -2145,12 +2145,23 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     let host = base.trim_start_matches("https://").to_string();
 
     let client = reqwest::Client::new();
+    // 本次调用若由我们拉起自动化 Edge，结束后（无论成败）立即回收，避免常驻占几百 MB
+    struct EdgeCleanup(bool);
+    impl Drop for EdgeCleanup {
+        fn drop(&mut self) {
+            if self.0 {
+                kill_stale_ai_edge();
+            }
+        }
+    }
+    let mut edge_cleanup = EdgeCleanup(false);
     if !cdp_ready(&client).await {
         kill_stale_ai_edge();
         launch_ai_edge(true)?;
         if !cdp_ready(&client).await {
             return Err(String::from("浏览器启动超时"));
         }
+        edge_cleanup.0 = true;
     }
 
     let mut tab_err = String::from("未知错误");
@@ -3010,6 +3021,8 @@ pub fn run() {
                 if let Some(orig) = app_handle.state::<AppState>().eye_ramp.lock().unwrap().take() {
                     let _ = gamma::set_ramp(&orig);
                 }
+                // 退出时回收自动化浏览器，防止其常驻占用内存
+                kill_stale_ai_edge();
             }
         });
 }
