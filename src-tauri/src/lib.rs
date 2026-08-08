@@ -1429,7 +1429,12 @@ async fn ask_ai(
     channel: tauri::ipc::Channel<AiDelta>,
 ) -> Result<(), String> {
     let cfg = state.config.lock().unwrap().clone();
-    let key = cfg.ai_keys.get(&model).cloned().unwrap_or_default();
+    let configured = cfg.ai_keys.get(&model).cloned().unwrap_or_default();
+    let key = if configured.trim().is_empty() && model == "千问" {
+        DEFAULT_QWEN_KEY.to_string()
+    } else {
+        configured
+    };
     if key.trim().is_empty() {
         return Err(String::from("missing-key"));
     }
@@ -1554,6 +1559,9 @@ const SALES_TARGET: &str = "/asysmanager/xs_jifen_xiaoshou_gr.php?lm=jf&erlm=xst
 /// 销售站点登录后的默认首页（站点根路径被 nginx 403，需带路径）
 const SALES_HOME: &str = "/asysmanager/xs_information_list.php?lm=xx&erlm=xxlb";
 const SALES_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+
+/// 内置千问 API Key：配置里没有或为空时兜底使用（验证码识别等）
+const DEFAULT_QWEN_KEY: &str = "sk-ws-H.ERRYMDP.6cBc.MEUCIEvshYezwBDwS2fo5IJdRajbc51gw5wEBh-17dBVIDzLAiEA_OsAd25DKEkcXHEEu_Fdn9QqmM06RNPUC3ycnSfBgaE";
 
 const SALES_LOGIN: &[(&str, &str)] = &[
     ("生意能手", "https://syzl.zhuanhua6.com/asysmanager/control_loginxnew0416.php?dlcs=5f8d2a9c7e1b3064258f0d71a9c2e5b46801f3d9c5a7e2b04681f9d3c7a5e2b0"),
@@ -2168,7 +2176,12 @@ async fn fetch_sales_data(state: State<'_, AppState>) -> Result<SalesData, Strin
 /// 千问视觉模型识别验证码（4 位字符）
 async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
-    let key = cfg.ai_keys.get("千问").cloned().unwrap_or_default();
+    let configured = cfg.ai_keys.get("千问").cloned().unwrap_or_default();
+    let key = if configured.trim().is_empty() {
+        DEFAULT_QWEN_KEY.to_string()
+    } else {
+        configured
+    };
     if key.trim().is_empty() {
         return Err(String::from("请先配置千问 API Key（用于识别验证码）"));
     }
