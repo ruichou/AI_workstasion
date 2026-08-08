@@ -831,7 +831,7 @@ async function browserLoginSite(name: string) {
     toast(`${name} 登录失败：${String(e)}`);
   }
   btn.disabled = false;
-  btn.textContent = "🌐 浏览器登录";
+  btn.textContent = "🌐 自动登录";
 }
 
 async function saveSiteCookies() {

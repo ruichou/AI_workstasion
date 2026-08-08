@@ -1047,19 +1047,25 @@ async fn cdp_call(
 }
 
 async fn wait_page_loaded(ws: &mut Ws, next_id: &mut u64) -> Result<(), String> {
-    for _ in 0..50 {
+    // 必须等 readyState=complete 且已离开 about:blank（新版 Edge 的 /json/new 不在创建时跳转，
+    // 页面由调用方用 Page.navigate 驱动，这里需确认导航确实完成）
+    for _ in 0..60 {
         *next_id += 1;
         let r = cdp_call(
             ws,
             *next_id,
             "Runtime.evaluate",
-            serde_json::json!({"expression": "document.readyState", "returnByValue": true}),
+            serde_json::json!({"expression": "JSON.stringify([document.readyState, location.href])", "returnByValue": true}),
         )
         .await;
         if let Ok(v) = r {
-            if v.pointer("/result/value").and_then(|x| x.as_str()) == Some("complete") {
-                tokio::time::sleep(Duration::from_millis(2500)).await;
-                return Ok(());
+            if let Some(s) = v.pointer("/result/value").and_then(|x| x.as_str()) {
+                let complete = s.contains("\"complete\"");
+                let blank = s.contains("about:blank") || s.contains("about:newtab");
+                if complete && !blank {
+                    tokio::time::sleep(Duration::from_millis(2500)).await;
+                    return Ok(());
+                }
             }
         }
         tokio::time::sleep(Duration::from_millis(400)).await;
@@ -1083,7 +1089,7 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
 
     let url = ai_url_for(&model);
     let resp = client
-        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new?{}", urlencode(&url)))
+        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
         .send()
         .await
         .map_err(|e| format!("创建标签页失败: {e}"))?;
@@ -1103,6 +1109,15 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
     cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
     next_id += 1;
     cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
+    // 显式导航（新版 Edge 的 /json/new 已不再支持 ?url= 参数跳转）
+    next_id += 1;
+    cdp_call(
+        &mut ws,
+        next_id,
+        "Page.navigate",
+        serde_json::json!({"url": url}),
+    )
+    .await?;
     wait_page_loaded(&mut ws, &mut next_id).await?;
 
     let qstr = serde_json::to_string(&question).unwrap_or_default();
@@ -2020,7 +2035,7 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     }
 
     let resp = client
-        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new?{}", urlencode(login_url)))
+        .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
         .send()
         .await
         .map_err(|e| format!("创建标签页失败: {e}"))?;
@@ -2041,7 +2056,37 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
     next_id += 1;
     cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
-    wait_page_loaded(&mut ws, &mut next_id).await?;
+    // 显式导航（新版 Edge 的 /json/new 已不再支持 ?url= 参数跳转，否则标签页停在 about:blank）
+    next_id += 1;
+    cdp_call(
+        &mut ws,
+        next_id,
+        "Page.navigate",
+        serde_json::json!({"url": login_url}),
+    )
+    .await?;
+    // 等登录表单元素出现（约 20 秒上限），确保后续填充/截图在真实登录页上执行
+    let mut form_ready = false;
+    for _ in 0..50 {
+        next_id += 1;
+        if let Ok(r) = cdp_call(
+            &mut ws,
+            next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": "!!document.querySelector('#SiteControl_LoginName') && !!document.querySelector('#SiteControl_LoginPass')", "returnByValue": true}),
+        )
+        .await
+        {
+            if r.pointer("/result/value").and_then(|x| x.as_bool()).unwrap_or(false) {
+                form_ready = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    if !form_ready {
+        return Err(format!("登录页加载失败（{login_url}），可能有风控拦截"));
+    }
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     let u_json = serde_json::to_string(&username).unwrap_or_default();
