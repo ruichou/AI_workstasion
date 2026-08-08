@@ -952,6 +952,7 @@ fn open_ai_chat(state: State<'_, AppState>, model: String, question: String) -> 
 
 // ---------- CDP 浏览器自动化（内置 AI 问答） ----------
 const CDP_PORT: u16 = 9230;
+const QUARK_PORT: u16 = 9231;
 
 #[derive(Serialize)]
 struct AskResult {
@@ -1000,9 +1001,13 @@ fn launch_ai_edge(headless: bool) -> Result<(), String> {
 }
 
 async fn cdp_ready(client: &reqwest::Client) -> bool {
+    cdp_ready_at(client, CDP_PORT).await
+}
+
+async fn cdp_ready_at(client: &reqwest::Client, port: u16) -> bool {
     for _ in 0..30 {
         if client
-            .get(format!("http://127.0.0.1:{CDP_PORT}/json/version"))
+            .get(format!("http://127.0.0.1:{port}/json/version"))
             .send()
             .await
             .is_ok()
@@ -1026,16 +1031,66 @@ fn kill_stale_ai_edge() {
     std::thread::sleep(std::time::Duration::from_millis(1500));
 }
 
+/// 杀掉残留的自动化夸克实例（复用本站 Cookie 打开站点的专用实例）
+fn kill_stale_quark() {
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process -Filter \"Name='quark.exe'\" | Where-Object { $_.CommandLine -like '*glassworkspace*quark-sites*' -or $_.CommandLine -like '*remote-debugging-port=9231*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+        ])
+        .output();
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+}
+
+fn quark_path() -> Option<PathBuf> {
+    let local = std::env::var("LOCALAPPDATA").ok()?;
+    let p = PathBuf::from(&local).join(r"Programs\Quark\Quark.exe");
+    if p.exists() {
+        return Some(p);
+    }
+    let p2 = PathBuf::from(&local).join(r"Programs\Quark\quark.exe");
+    if p2.exists() {
+        return Some(p2);
+    }
+    None
+}
+
+fn launch_quark() -> Result<(), String> {
+    let Some(q) = quark_path() else {
+        return Err(String::from("未找到夸克浏览器"));
+    };
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| String::from("."));
+    let profile = format!(r"{local}\glassworkspace\quark-sites");
+    let args = vec![
+        format!("--remote-debugging-port={QUARK_PORT}"),
+        format!("--user-data-dir={profile}"),
+        String::from("--no-first-run"),
+        String::from("--no-default-browser-check"),
+    ];
+    let mut last_err = String::new();
+    for _ in 0..3 {
+        match std::process::Command::new(&q).args(&args).spawn() {
+            Ok(_) => return Ok(()),
+            Err(e) => last_err = format!("启动夸克失败: {e}"),
+        }
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    Err(last_err)
+}
+
 /// 创建新标签页并解析返回的调试信息；对解码失败/非 JSON 响应做一次清理重试，
 /// 保证任何情况下都返回明确错误（含响应预览，便于定位）
 async fn open_cdp_tab(
     client: &reqwest::Client,
+    port: u16,
+    kill_stale: fn(),
     next_err: &mut String,
 ) -> Result<(String, String), String> {
-    // String = (webSocketDebuggerUrl, page url)。两次尝试：先裸创建，失败则杀掉残留 Edge 重试
+    // String = (webSocketDebuggerUrl, page url)。两次尝试：先裸创建，失败则杀掉残留实例重试
     for attempt in 0..2 {
         let resp = client
-            .put(format!("http://127.0.0.1:{CDP_PORT}/json/new"))
+            .put(format!("http://127.0.0.1:{port}/json/new"))
             .send()
             .await;
         let text = match resp {
@@ -1046,7 +1101,7 @@ async fn open_cdp_tab(
                     let preview = body.chars().take(120).collect::<String>();
                     if attempt == 0 {
                         *next_err = format!("标签页接口 HTTP {status}：{preview}");
-                        kill_stale_ai_edge();
+                        kill_stale();
                         continue;
                     }
                     return Err(format!("创建标签页失败 HTTP {status}：{preview}"));
@@ -1056,7 +1111,7 @@ async fn open_cdp_tab(
             Err(e) => {
                 if attempt == 0 {
                     *next_err = format!("创建标签页请求失败: {e}");
-                    kill_stale_ai_edge();
+                    kill_stale();
                     continue;
                 }
                 return Err(format!("创建标签页请求失败: {e}"));
@@ -1157,7 +1212,7 @@ async fn ask_ai_browser(model: String, question: String) -> Result<AskResult, St
 
     let url = ai_url_for(&model);
     let mut tab_err = String::from("未知错误");
-    let (ws_url, _) = open_cdp_tab(&client, &mut tab_err).await?;
+    let (ws_url, _) = open_cdp_tab(&client, CDP_PORT, kill_stale_ai_edge, &mut tab_err).await?;
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
@@ -1402,6 +1457,8 @@ const SALES_SITES: &[(&str, &str)] = &[
 ];
 
 const SALES_TARGET: &str = "/asysmanager/xs_jifen_xiaoshou_gr.php?lm=jf&erlm=xstj";
+/// 销售站点登录后的默认首页（站点根路径被 nginx 403，需带路径）
+const SALES_HOME: &str = "/asysmanager/xs_information_list.php?lm=xx&erlm=xxlb";
 const SALES_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
 
 const SALES_LOGIN: &[(&str, &str)] = &[
@@ -2097,7 +2154,7 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     }
 
     let mut tab_err = String::from("未知错误");
-    let (ws_url, _) = open_cdp_tab(&client, &mut tab_err).await?;
+    let (ws_url, _) = open_cdp_tab(&client, CDP_PORT, kill_stale_ai_edge, &mut tab_err).await?;
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
         .await
@@ -2307,6 +2364,69 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
         last_err = String::from("登录成功但未捕获到 Cookie");
     }
     Err(format!("自动登录失败（{last_err}）"))
+}
+
+/// 在夸克浏览器（专用实例）中复用应用内已保存的 PHPSESSID Cookie 打开销售站点
+#[tauri::command]
+async fn open_site_in_quark(state: State<'_, AppState>, site: String) -> Result<String, String> {
+    let cfg0 = state.config.lock().unwrap().clone();
+    let sc = cfg0.sites.get(&site).cloned().unwrap_or_default();
+    if sc.cookie.trim().is_empty() {
+        return Err(String::from("该站点还没有 Cookie，请先在「配置 Cookie」面板点自动登录"));
+    }
+    let Some((_, base)) = SALES_SITES.iter().find(|(n, _)| *n == site) else {
+        return Err(format!("未知站点: {site}"));
+    };
+    let host = base.trim_start_matches("https://").to_string();
+    let cookie = sc.cookie.trim().to_string();
+
+    let client = reqwest::Client::new();
+    if !cdp_ready_at(&client, QUARK_PORT).await {
+        kill_stale_quark();
+        launch_quark()?;
+        if !cdp_ready_at(&client, QUARK_PORT).await {
+            return Err(String::from("夸克启动超时"));
+        }
+    }
+
+    let mut tab_err = String::from("未知错误");
+    let (ws_url, _) = open_cdp_tab(&client, QUARK_PORT, kill_stale_quark, &mut tab_err).await?;
+    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .map_err(|e| format!("连接调试端口失败: {e}"))?;
+    let mut next_id: u64 = 200;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Network.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Page.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(&mut ws, next_id, "Runtime.enable", serde_json::json!({})).await?;
+    next_id += 1;
+    cdp_call(
+        &mut ws,
+        next_id,
+        "Network.setCookie",
+        serde_json::json!({
+            "name": "PHPSESSID",
+            "value": cookie,
+            "domain": host,
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+        }),
+    )
+    .await?;
+    next_id += 1;
+    cdp_call(
+        &mut ws,
+        next_id,
+        "Page.navigate",
+        serde_json::json!({"url": format!("{base}{SALES_HOME}")}),
+    )
+    .await?;
+    wait_page_loaded(&mut ws, &mut next_id).await?;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    Ok(format!("已在夸克中打开 {site}"))
 }
 
 // ---------- 屏幕级通知窗口（正上方 / 右上方） ----------
@@ -2849,6 +2969,7 @@ pub fn run() {
             open_external,
             fetch_sales_data,
             auto_login_site,
+            open_site_in_quark,
             show_screen_notify
         ])
         .build(tauri::generate_context!())

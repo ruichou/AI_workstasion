@@ -1184,6 +1184,36 @@ body {
   background: rgba(139, 92, 246, 0.24);
 }
 
+/* 标题旁的站点打开按钮 */
+.ws-sites {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.ws-site-btn {
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.ws-site-btn:hover {
+  background: rgba(56, 189, 248, 0.24);
+}
+
+.ws-site-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .card-title {
   font-size: clamp(11px, 1.05vw, 17px);
   font-weight: 700;

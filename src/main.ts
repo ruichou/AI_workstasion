@@ -882,6 +882,21 @@ function initSales() {
   });
   // 双击「自定义工作区」标题打开 Cookie 配置
   document.querySelector(".workspace-card .card-title")?.addEventListener("dblclick", () => openSitePanel());
+  // 标题旁的站点按钮：在夸克中打开站点（复用已登录 Cookie）
+  document.querySelector(".workspace-card .card-head")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".ws-site-btn");
+    if (!btn) return;
+    const site = btn.dataset.site ?? "";
+    if (!site) return;
+    btn.disabled = true;
+    toast(`正在夸克中打开 ${site}…`);
+    invoke<string>("open_site_in_quark", { site })
+      .then((msg) => toast(msg))
+      .catch((e2) => toast(`${site} 打开失败：${String(e2)}`))
+      .finally(() => {
+        btn.disabled = false;
+      });
+  });
   $("recharge-close").addEventListener("click", () => $("recharge-panel").classList.add("hidden"));
   $("recharge-panel").addEventListener("click", (e) => {
     if (e.target === e.currentTarget) $("recharge-panel").classList.add("hidden");
