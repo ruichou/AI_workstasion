@@ -1233,7 +1233,7 @@ body {
 .clock-main {
   display: grid;
   grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
-  gap: clamp(12px, 1.4vw, 22px);
+  gap: clamp(8px, 1vw, 14px);
   align-items: center;
   width: 100%;
   margin-top: 10px;
@@ -1253,7 +1253,6 @@ body {
   gap: 8px;
   text-align: left;
   min-width: 0;
-  padding-right: 6px;
 }
 
 .city-gear {
@@ -1388,10 +1387,10 @@ body {
 
 .d-row {
   display: grid;
-  grid-template-columns: 40px 22px minmax(0, 1fr) 66px;
+  grid-template-columns: 38px 20px minmax(0, 1fr) 62px;
   align-items: center;
-  gap: 5px;
-  padding: 4px 0;
+  gap: 4px;
+  padding: 3px 0;
 }
 
 .d-row + .d-row {
