@@ -2890,7 +2890,38 @@ fn spawn_ctrl_triple_detector(app: tauri::AppHandle) {
     });
 }
 
+/// 崩溃快速重启守卫：若 60 秒内连续两次启动，判定为 WebView2 缓存/配置损坏导致的崩溃循环，
+/// 自动清掉 WebView2 缓存目录（EBWebView）后继续启动（纯缓存，不影响任何配置数据）
+fn crash_loop_guard() {
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    if local.is_empty() {
+        return;
+    }
+    let dir = std::path::Path::new(&local).join("com.glassworkspace.app");
+    let marker = dir.join("startup-marker.txt");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last = std::fs::read_to_string(&marker)
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0);
+    if last != 0 && now.saturating_sub(last) < 60 {
+        let webview_data = dir.join("EBWebView");
+        if webview_data.exists() {
+            let _ = std::fs::remove_dir_all(&webview_data);
+        }
+        println!("[crash-guard] cleared EBWebView cache after rapid restarts");
+        let _ = std::fs::remove_file(&marker);
+        return;
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    let _ = std::fs::write(&marker, now.to_string());
+}
+
 pub fn run() {
+    crash_loop_guard();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
