@@ -399,6 +399,30 @@ async function autoRelogin(sites: string[]) {
 let salesRecharge: SalesData["recharge"] = {};
 let salesLoginPerson = "";
 
+/// 启动即自动登录：对已配置账号密码的站点，直接用无头浏览器登录续期 Cookie，
+/// 不依赖先失败再补救。登录完成后再拉数据
+async function startupAutoLogin() {
+  try {
+    const cfg = await invoke<Config>("get_config");
+    for (const s of SALES_SITES) {
+      const sc = cfg.sites?.[s.name];
+      if (!sc || !sc.username || !sc.password) continue;
+      try {
+        await invoke<string>("auto_login_site", { site: s.name });
+        toast(`${s.name} 自动登录成功`);
+      } catch (e) {
+        console.error(`启动自动登录 ${s.name} 失败:`, e);
+        toast(`${s.name} 自动登录失败：${String(e).slice(0, 60)}`);
+      }
+    }
+    autoLoginAt = Date.now();
+    autoLoginFailAt = Date.now();
+  } catch (e) {
+    console.error("startupAutoLogin failed:", e);
+  }
+  void refreshSales();
+}
+
 const SALES_SITES = [
   { name: "生意能手", base_url: "https://syzl.zhuanhua6.com" },
   { name: "来接生意", base_url: "https://ljsy.jywlkj.com" },
@@ -516,6 +540,28 @@ function checkRankArrivals(data: SalesData) {
     }
   }
   lastRankSnapshot = cur;
+}
+
+let lastMyRecharge: Set<string> | null = null;
+
+function checkMyRecharge(data: SalesData) {
+  if (!data.ok) return;
+  const me = data.login_person ?? "";
+  if (!me) return;
+  const recs = (data.recharge ?? {})[me] ?? [];
+  const cur = new Set(recs.map((r) => `${r.site}|${r.customer}|${r.time}|${r.amount}`));
+  const prev = lastMyRecharge;
+  if (prev) {
+    const fresh = recs.filter((r) => !prev.has(`${r.site}|${r.customer}|${r.time}|${r.amount}`));
+    if (fresh.length) {
+      const total = fresh.reduce((s, r) => s + (r.amount ?? 0), 0);
+      launchFirework(`💰 本人到账 +${total.toLocaleString()} 元`);
+      showAlertRight(
+        `🎉 本人到账 +${total.toLocaleString()} 元（${fresh.length} 笔${fresh.length <= 3 ? `，最新：${fresh[fresh.length - 1].customer} ${fresh[fresh.length - 1].amount ?? 0} 元` : ""}）`,
+      );
+    }
+  }
+  lastMyRecharge = cur;
 }
 
 function checkUsageArrivals(data: SalesData) {
@@ -775,6 +821,7 @@ async function refreshSales() {
     salesRecharge = data.recharge ?? {};
     salesLoginPerson = data.login_person ?? "";
     checkRankArrivals(data);
+    checkMyRecharge(data);
     checkUsageArrivals(data);
     checkViewArrivals(data);
     checkNewFollows(data);
@@ -3220,6 +3267,7 @@ function init() {
   }
   loadOffTime();
   $("off-work").addEventListener("click", () => void setOffTime());
+  void startupAutoLogin();
   setInterval(fmtClock, 1000);
   setInterval(refreshSys, 2000);
   setInterval(refreshTemps, 5000);

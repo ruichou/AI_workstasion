@@ -2364,7 +2364,8 @@ async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<St
 
 /// 浏览器自动化全自动登录：填账号密码 → 识别验证码 → 提交 → 捕获 PHPSESSID 保存
 #[tauri::command]
-async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: String) -> Result<String, String> {
+/// 自动登录（headless=true 无头浏览器；false 可见窗口）。失败返回错误详情
+async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, headless: bool) -> Result<String, String> {
     let cfg0 = state.config.lock().unwrap().clone();
     let site_cfg = cfg0.sites.get(&site).cloned().unwrap_or_default();
     if site_cfg.username.trim().is_empty() {
@@ -2397,7 +2398,7 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
     let mut edge_cleanup = EdgeCleanup(false);
     if !cdp_ready(&client).await {
         kill_stale_ai_edge();
-        launch_ai_edge(true)?;
+        launch_ai_edge(headless)?;
         if !cdp_ready(&client).await {
             return Err(String::from("浏览器启动超时"));
         }
@@ -2446,7 +2447,23 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
         tokio::time::sleep(Duration::from_millis(400)).await;
     }
     if !form_ready {
-        return Err(format!("登录页加载失败（{login_url}），可能有风控拦截"));
+        let mut preview = String::from("页面无内容");
+        next_id += 1;
+        if let Ok(r) = cdp_call(
+            &mut ws,
+            next_id,
+            "Runtime.evaluate",
+            serde_json::json!({"expression": "(() => { const t = document.body && document.body.innerText ? document.body.innerText : (document.documentElement ? document.documentElement.outerHTML : ''); return (t || '').slice(0, 200); })()", "returnByValue": true}),
+        )
+        .await
+        {
+            if let Some(s) = r.pointer("/result/value").and_then(|x| x.as_str()) {
+                preview = s.to_string();
+            }
+        }
+        return Err(format!(
+            "登录页加载失败（{login_url}），可能有风控拦截。页面内容：{preview}"
+        ));
     }
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
@@ -2615,6 +2632,19 @@ async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: Strin
         last_err = String::from("登录成功但未捕获到 Cookie");
     }
     Err(format!("自动登录失败（{last_err}）"))
+}
+
+/// 自动登录（带无头→可见窗口两级回退）：优先无头浏览器（不打扰用户），
+/// 无头被风控拦截/登录失败时，退回可见浏览器再完整试一次，仍失败才报错
+#[tauri::command]
+async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: String) -> Result<String, String> {
+    match do_login(app.clone(), state.clone(), site.clone(), true).await {
+        Ok(v) => Ok(v),
+        Err(_headless_err) => {
+            // 无头失败多半是风控/验证码策略差异，换可见窗口重试（用户可见过程，成功率高）
+            do_login(app, state, site, false).await
+        }
+    }
 }
 
 /// 在用户自己的夸克浏览器中打开销售站点：优先是用户日常使用（已登录、已选好主体）的那个夸克，
