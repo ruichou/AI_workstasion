@@ -2362,16 +2362,32 @@ async fn ocr_captcha(state: &State<'_, AppState>, img_base64: &str) -> Result<St
     }
 }
 
+/// 自动登录运行日志（写在配置目录 auto-login.log，排查 502/风控等场景用）
+fn log_autologin(app: &AppHandle, msg: &str) {
+    if let Ok(p) = config_path(app) {
+        if let Some(dir) = p.parent() {
+            let line = format!("{} {}\r\n", chrono_now_str(), msg);
+            let _ = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(dir.join("auto-login.log"))
+                .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+        }
+    }
+}
+
 /// 浏览器自动化全自动登录：填账号密码 → 识别验证码 → 提交 → 捕获 PHPSESSID 保存
-#[tauri::command]
 /// 自动登录（headless=true 无头浏览器；false 可见窗口）。失败返回错误详情
 async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, headless: bool) -> Result<String, String> {
+    log_autologin(&app, &format!("=== 开始自动登录 {site}（headless={headless}）"));
     let cfg0 = state.config.lock().unwrap().clone();
     let site_cfg = cfg0.sites.get(&site).cloned().unwrap_or_default();
     if site_cfg.username.trim().is_empty() {
+        log_autologin(&app, "未配置账号");
         return Err(String::from("未配置账号，请先在「配置 Cookie」面板填写账号密码"));
     }
     if site_cfg.password.trim().is_empty() {
+        log_autologin(&app, "未配置密码");
         return Err(String::from("未配置密码，请先在「配置 Cookie」面板填写账号密码"));
     }
     let username = site_cfg.username.trim().to_string();
@@ -2400,6 +2416,7 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
         kill_stale_ai_edge();
         launch_ai_edge(headless)?;
         if !cdp_ready(&client).await {
+            log_autologin(&app, "浏览器启动超时（CDP 端口未就绪）");
             return Err(String::from("浏览器启动超时"));
         }
         edge_cleanup.0 = true;
@@ -2461,6 +2478,7 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
                 preview = s.to_string();
             }
         }
+        log_autologin(&app, &format!("登录页加载失败，页面内容前 200 字：{preview}"));
         return Err(format!(
             "登录页加载失败（{login_url}），可能有风控拦截。页面内容：{preview}"
         ));
@@ -2584,10 +2602,12 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
         }
         if !logged_in {
             last_err = format!("第 {} 次尝试：验证码识别可能错误，已自动重试", attempt + 1);
+            log_autologin(&app, &last_err);
             next_id += 1;
             let _ = cdp_call(&mut ws, next_id, "Runtime.evaluate", serde_json::json!({"expression": "changing(); 'ok'"})).await;
             continue;
         }
+        log_autologin(&app, "页面已跳转（登录成功），开始捕获 Cookie");
 
         tokio::time::sleep(Duration::from_millis(800)).await;
         for _ in 0..5 {
@@ -2610,20 +2630,28 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
                             .header("Cookie", format!("PHPSESSID={value}"))
                             .send()
                             .await;
+                        let mut valid = false;
                         if let Ok(vr) = vresp {
-                            if vr.status() == reqwest::StatusCode::OK {
-                                let mut cfg = state.config.lock().unwrap();
-                                let e = cfg.sites.entry(site.clone()).or_default();
-                                e.base_url = base.to_string();
-                                e.cookie = value.clone();
-                                if let Ok(p) = config_path(&app) {
-                                    if let Ok(raw) = serde_json::to_string_pretty(&*cfg) {
-                                        let _ = fs::write(p, raw);
-                                    }
-                                }
-                                return Ok(value);
+                            valid = vr.status() == reqwest::StatusCode::OK;
+                        }
+                        // 校验请求被 WAF/服务端 502/5xx 拦住不代表登录失败（浏览器里已登录成功），
+                        // 仍保存 Cookie，下一分钟数据拉取会做真实校验
+                        let mut cfg = state.config.lock().unwrap();
+                        let e = cfg.sites.entry(site.clone()).or_default();
+                        e.base_url = base.to_string();
+                        e.cookie = value.clone();
+                        if let Ok(p) = config_path(&app) {
+                            if let Ok(raw) = serde_json::to_string_pretty(&*cfg) {
+                                let _ = fs::write(p, raw);
                             }
                         }
+                        log_autologin(
+                            &app,
+                            &format!(
+                                "登录成功，Cookie 已保存（domain={domain}，校验请求 valid={valid}）"
+                            ),
+                        );
+                        return Ok(value);
                     }
                 }
             }
@@ -2631,6 +2659,7 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
         }
         last_err = String::from("登录成功但未捕获到 Cookie");
     }
+    log_autologin(&app, &format!("自动登录失败（{last_err}）"));
     Err(format!("自动登录失败（{last_err}）"))
 }
 
@@ -2640,9 +2669,13 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
 async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: String) -> Result<String, String> {
     match do_login(app.clone(), state.clone(), site.clone(), true).await {
         Ok(v) => Ok(v),
-        Err(_headless_err) => {
+        Err(headless_err) => {
             // 无头失败多半是风控/验证码策略差异，换可见窗口重试（用户可见过程，成功率高）
-            do_login(app, state, site, false).await
+            log_autologin(&app, &format!("无头模式失败（{headless_err}），退回可见窗口重试"));
+            match do_login(app, state, site, false).await {
+                Ok(v) => Ok(v),
+                Err(visible_err) => Err(visible_err),
+            }
         }
     }
 }
