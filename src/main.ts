@@ -402,6 +402,10 @@ let salesLoginPerson = "";
 /// 启动即自动登录：对已配置账号密码的站点，直接用无头浏览器登录续期 Cookie，
 /// 不依赖先失败再补救。登录完成后再拉数据
 async function startupAutoLogin() {
+  // 先占住节流位：启动期间 refreshSales 失败触发的 autoRelogin 会被 5 分钟节流拦住，
+  // 避免「启动自动登录」与「失败重登」并发打同一个无头浏览器（曾导致 502 全挂）
+  autoLoginAt = Date.now();
+  autoLoginFailAt = Date.now();
   try {
     const cfg = await invoke<Config>("get_config");
     for (const s of SALES_SITES) {
@@ -415,8 +419,6 @@ async function startupAutoLogin() {
         toast(`${s.name} 自动登录失败：${String(e).slice(0, 60)}`);
       }
     }
-    autoLoginAt = Date.now();
-    autoLoginFailAt = Date.now();
   } catch (e) {
     console.error("startupAutoLogin failed:", e);
   }

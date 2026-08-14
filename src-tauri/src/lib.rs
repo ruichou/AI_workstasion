@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use sysinfo::{Disks, System};
 use tauri::{AppHandle, Manager, State};
@@ -144,6 +144,9 @@ struct AppState {
     geocode: Mutex<Option<(f64, f64)>>,
     http: reqwest::Client,
     eye_ramp: Mutex<Option<[u16; 768]>>,
+    /// 自动登录全局串行锁：启动自动登录与失败重登可能并发触发，
+    /// 并发操作同一个 Edge CDP 实例会互相 kill / 抢端口导致 HTTP 502
+    autologin_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -156,6 +159,7 @@ impl AppState {
                 .build()
                 .unwrap_or_default(),
             eye_ramp: Mutex::new(None),
+            autologin_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -1223,13 +1227,18 @@ async fn cdp_ready(client: &reqwest::Client) -> bool {
 
 async fn cdp_ready_at(client: &reqwest::Client, port: u16) -> bool {
     for _ in 0..30 {
-        if client
+        if let Ok(r) = client
             .get(format!("http://127.0.0.1:{port}/json/version"))
             .send()
             .await
-            .is_ok()
         {
-            return true;
+            // 只认真正的浏览器调试服务：占用端口的其他程序（代理/残留进程）也会回 HTTP 200/502，
+            // 但 body 不是 JSON——这种不能算就绪，否则后续 /json/new 必然失败
+            if let Ok(t) = r.text().await {
+                if t.trim_start().starts_with('{') {
+                    return true;
+                }
+            }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -1303,8 +1312,9 @@ async fn open_cdp_tab(
     kill_stale: fn(),
     next_err: &mut String,
 ) -> Result<(String, String), String> {
-    // String = (webSocketDebuggerUrl, page url)。两次尝试：先裸创建，失败则杀掉残留实例重试
-    for attempt in 0..2 {
+    // String = (webSocketDebuggerUrl, page url)。最多 4 次尝试：前几次不杀浏览器（可能只是 Edge 忙/正在销毁，
+    // 误杀会把并发登录对方的浏览器也干掉），最后仍失败才杀残留实例重试
+    for attempt in 0..4 {
         let resp = client
             .put(format!("http://127.0.0.1:{port}/json/new"))
             .send()
@@ -1315,9 +1325,14 @@ async fn open_cdp_tab(
                 let body = r.text().await.unwrap_or_default();
                 if !status.is_success() || !body.trim_start().starts_with('{') {
                     let preview = body.chars().take(120).collect::<String>();
-                    if attempt == 0 {
+                    if attempt < 3 {
                         *next_err = format!("标签页接口 HTTP {status}：{preview}");
+                        tokio::time::sleep(Duration::from_millis(800)).await;
+                        continue;
+                    }
+                    if status == reqwest::StatusCode::BAD_GATEWAY {
                         kill_stale();
+                        tokio::time::sleep(Duration::from_millis(1500)).await;
                         continue;
                     }
                     return Err(format!("创建标签页失败 HTTP {status}：{preview}"));
@@ -1325,12 +1340,14 @@ async fn open_cdp_tab(
                 body
             }
             Err(e) => {
-                if attempt == 0 {
+                if attempt < 3 {
                     *next_err = format!("创建标签页请求失败: {e}");
-                    kill_stale();
+                    tokio::time::sleep(Duration::from_millis(800)).await;
                     continue;
                 }
-                return Err(format!("创建标签页请求失败: {e}"));
+                kill_stale();
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                continue;
             }
         };
         return serde_json::from_str::<serde_json::Value>(&text)
@@ -2667,6 +2684,10 @@ async fn do_login(app: AppHandle, state: State<'_, AppState>, site: String, head
 /// 无头被风控拦截/登录失败时，退回可见浏览器再完整试一次，仍失败才报错
 #[tauri::command]
 async fn auto_login_site(app: AppHandle, state: State<'_, AppState>, site: String) -> Result<String, String> {
+    // 全局串行：开机时「启动自动登录」和「失败重登」会并发触发，
+    // 两个登录同时操作同一个 Edge CDP 端口会互相踩（kill/502），这里排队执行
+    let lock = state.autologin_lock.clone();
+    let _guard = lock.lock().await;
     match do_login(app.clone(), state.clone(), site.clone(), true).await {
         Ok(v) => Ok(v),
         Err(headless_err) => {
