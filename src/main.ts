@@ -2838,9 +2838,47 @@ function updateUptime() {
   el.textContent = `⏱ 已运行 ${hh}:${mm}:${ss}`;
 }
 
+// ---------- 周末倒计时（本周六 18:00，到点庆贺） ----------
+let weekendTarget = 0;
+let weekendCelebrated = false;
+
+function updateWeekend() {
+  const el = $("weekend-count");
+  if (!el) return;
+  const now = new Date();
+  const target = new Date(now);
+  let addDays = (6 - now.getDay() + 7) % 7;
+  if (addDays === 0 && now.getHours() >= 18) addDays = 7;
+  target.setDate(target.getDate() + addDays);
+  target.setHours(18, 0, 0, 0);
+  const targetKey = target.getTime();
+  if (targetKey !== weekendTarget) {
+    weekendTarget = targetKey;
+    weekendCelebrated = false;
+  }
+  const diff = targetKey - now.getTime();
+  if (diff <= 0) {
+    el.textContent = "🎉 周末快乐！";
+    if (!weekendCelebrated) {
+      weekendCelebrated = true;
+      launchFirework("🎉 到点啦！周末快乐，好好休息！");
+      toast("🎉 周六 18:00 到点，周末快乐！");
+    }
+    return;
+  }
+  const days = Math.floor(diff / 86400000);
+  const hh = String(Math.floor((diff % 86400000) / 3600000)).padStart(2, "0");
+  const mm = String(Math.floor((diff % 3600000) / 60000)).padStart(2, "0");
+  const ss = String(Math.floor((diff % 60000) / 1000)).padStart(2, "0");
+  el.textContent =
+    days > 0 ? `🌴 距周末 ${days}天 ${hh}:${mm}:${ss}` : `🌴 距周末 ${hh}:${mm}:${ss}`;
+}
+
 function initUptime() {
   updateUptime();
   setInterval(updateUptime, 1000);
+  updateWeekend();
+  setInterval(updateWeekend, 1000);
   const check = $("btn-check-update") as HTMLButtonElement;
   if (check) {
     check.addEventListener("click", async () => {
